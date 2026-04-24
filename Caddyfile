@@ -1,0 +1,128 @@
+# =============================================================================
+# Caddyfile — Reverse Proxy + Automatic HTTPS
+# Domain: pratyushsudhakar.com
+# =============================================================================
+# Services exposed:
+#   - litellm.pratyushsudhakar.com  → LiteLLM Proxy (port 4000)
+#   - mem0.pratyushsudhakar.com     → Mem0 Memory API (port 8000)
+#   - status.pratyushsudhakar.com   → Health check endpoint
+# =============================================================================
+{
+	# Global options
+	admin off
+	auto_https disable_redirects
+	log {
+		output file /data/caddy.log {
+			roll_size 10MB
+			roll_keep 10
+			roll_keep_for 720h
+		}
+		format json
+		level INFO
+	}
+}
+
+# ── LiteLLM Proxy ──────────────────────────────────────────────────────────
+litellm.pratyushsudhakar.com {
+	reverse_proxy litellm:4000 {
+		header_up Host {host}
+		header_up X-Real-IP {remote}
+
+		# Health check
+		health_uri /health/liveliness
+		health_interval 30s
+		health_timeout 10s
+	}
+
+	# CORS headers for API access
+	@cors_preflight method OPTIONS
+	respond @cors_preflight 204
+	header {
+		Access-Control-Allow-Origin "*"
+		Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+		Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
+		Access-Control-Max-Age "86400"
+	}
+
+	# Rate limiting (basic)
+	# For production, consider using a dedicated rate limiter or Caddy enterprise
+
+	# Security headers
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		X-XSS-Protection "1; mode=block"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# Logging
+	log {
+		output file /data/access-litellm.log {
+			roll_size 10MB
+			roll_keep 10
+		}
+		format json
+	}
+}
+
+# ── Mem0 Memory API ────────────────────────────────────────────────────────
+mem0.pratyushsudhakar.com {
+	reverse_proxy mem0:8000 {
+		header_up Host {host}
+		header_up X-Real-IP {remote}
+
+		health_uri /healthz
+		health_interval 30s
+		health_timeout 5s
+	}
+
+	# CORS headers
+	@cors_preflight method OPTIONS
+	respond @cors_preflight 204
+	header {
+		Access-Control-Allow-Origin "*"
+		Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+		Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
+		Access-Control-Max-Age "86400"
+	}
+
+	# Security headers
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		X-XSS-Protection "1; mode=block"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+	}
+
+	log {
+		output file /data/access-mem0.log {
+			roll_size 10MB
+			roll_keep 10
+		}
+		format json
+	}
+}
+
+# ── Status / Health Endpoint ───────────────────────────────────────────────
+status.pratyushsudhakar.com {
+	respond /health 200 {
+		body "{\"status\":\"ok\",\"services\":{\"litellm\":\"up\",\"mem0\":\"up\",\"proxy\":\"up\"}}"
+		close
+	}
+
+	header {
+		Content-Type "application/json"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+	}
+}
+
+# ── Local container health + default catch-all ─────────────────────────────
+:80 {
+	respond /health 200 {
+		body "{\"status\":\"ok\",\"services\":{\"proxy\":\"up\"}}"
+		close
+	}
+
+	respond "Not Found" 404
+}

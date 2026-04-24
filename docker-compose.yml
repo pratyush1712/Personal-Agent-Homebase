@@ -1,0 +1,143 @@
+# =============================================================================
+# Oh-My-OpenAgent + LiteLLM + Mem0 — Shared Compose Base
+# =============================================================================
+# Use one of the environment overlays and matching env files:
+#   Local:      docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml up -d
+#   Production: docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d
+# =============================================================================
+
+name: openagent-stack
+
+services:
+  litellm:
+    image: docker.litellm.ai/berriai/litellm-database:main-stable
+    restart: unless-stopped
+    command:
+      - "--config"
+      - "/app/config.yaml"
+      - "--port"
+      - "4000"
+      - "--num_workers"
+      - "${LITELLM_WORKERS:-4}"
+    volumes:
+      - ./litellm.config.yaml:/app/config.yaml:ro
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY}
+      DATABASE_URL: ${DATABASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_AI_STUDIO_API_KEY: ${GOOGLE_AI_STUDIO_API_KEY}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      KIMI_API_KEY: ${KIMI_API_KEY:-}
+      GLM_API_KEY: ${GLM_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      VERTEX_PROJECT_ID: ${VERTEX_PROJECT_ID:-}
+      REDIS_HOST: ${REDIS_HOST:-}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      PROXY_BASE_URL: ${PROXY_BASE_URL:-}
+      PROXY_LOGOUT_URL: ${PROXY_LOGOUT_URL:-}
+    networks:
+      - openagent-net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness', timeout=5)\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  mem0:
+    image: mem0/mem0-api-server:latest
+    restart: unless-stopped
+    volumes:
+      - mem0_data:/app/data
+      - ./mem0/main.py:/app/main.py:ro
+    environment:
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-pratyush_agent_memory}
+      QDRANT_EMBEDDING_DIMS: ${QDRANT_EMBEDDING_DIMS:-1536}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LITELLM_BASE_URL: http://litellm:4000/v1
+      MEM0_LLM_MODEL: ${MEM0_LLM_MODEL:-deepseek/deepseek-chat}
+      MEM0_EMBEDDER_MODEL: ${MEM0_EMBEDDER_MODEL:-text-embedding-3-small}
+      HISTORY_DB_PATH: /app/data/history.db
+    networks:
+      - openagent-net
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      litellm:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=5)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - openagent-net
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bash",
+          "-c",
+          "exec 3<>/dev/tcp/127.0.0.1/6333 && echo -e 'GET /readyz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q 'HTTP/1.1 200' <&3",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+
+networks:
+  openagent-net:
+    driver: bridge
+
+volumes:
+  qdrant_data:
+    driver: local
+  mem0_data:
+    driver: local

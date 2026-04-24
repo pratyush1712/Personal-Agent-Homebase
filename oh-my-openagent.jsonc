@@ -1,0 +1,608 @@
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-openagent.schema.json",
+  "_meta": {
+    "author": "Pratyush Sudhakar",
+    "updated": "2026-04-24",
+    "version": "2.1.0",
+
+    // -----------------------------------------------------------------------
+    // COST HIERARCHY (cheapest → most expensive, exhaust each tier first)
+    //
+    //  FREE TIER ─────────────────────────────────────────────────────────────
+    //  1. glm-4.7-flash         Z.ai free forever, 203K ctx, great for routing/formatting
+    //  2. glm-4.5-flash         Z.ai free forever, general lightweight tasks
+    //
+    //  QUOTA TIER (Google AI Pro $19.99/mo — use before any paid API) ────────
+    //  3. gemini-3-flash        Gemini 3 Flash within Google AI Pro monthly quota
+    //  4. gemini-3.1-pro        Gemini 3.1 Pro within Google AI Pro monthly quota
+    //  5. gemini-2.5-flash      Fallback if Gemini 3 quota exhausted (~$0.10/M)
+    //
+    //  ULTRA-CHEAP PAID ───────────────────────────────────────────────────────
+    //  6. deepseek-v4           $0.30/$0.50/M — 81% SWE-bench; caching = 90% off input
+    //  7. gpt-4.1-nano          $0.10/$0.40/M — 2.5M tok/day budget; best for boilerplate
+    //  8. qwen3-30b-a3b         ~$0.08/M input via OpenRouter — cheapest frontier coder
+    //  9. glm-4.7               $0.39/$1.75/M — 73.8% SWE-bench, 203K ctx
+    //
+    //  MID-TIER PAID ──────────────────────────────────────────────────────────
+    // 10. kimi-k2.5             $0.60/$2.50/M — 256K ctx, agent/visual coding
+    // 11. deepseek-r1           $0.55/$2.19/M — cheapest reasoning model; use before o4-mini
+    // 12. gpt-4.1-mini          $0.40/$1.60/M — 1M ctx, strong instruction following
+    // 13. qwen2.5-coder-32b     $0.66/$0.80/M — specialized code generation
+    //
+    //  PREMIUM PAID ───────────────────────────────────────────────────────────
+    // 14. gemini-2.5-pro        Paid API fallback after Google quota exhausted
+    // 15. o4-mini               $1.10/$4.40/M — when R1 isn't enough; 250K/day budget
+    // 16. kimi-k2.6             $0.95/$4.00/M — fastest Kimi, use when latency matters
+    // 17. gpt-5.4-mini          $0.75/$4.50/M — 250K/day premium budget
+    //
+    //  LAST RESORT ────────────────────────────────────────────────────────────
+    // 18. o3                    $2.00/$8.00/M — hardest problems only; 250K/day budget
+    // 19. gpt-5.4               $2.50/$15.00/M — burn 250K premium budget here max
+    // 20. claude-sonnet-4-6     Anthropic API (NOT Claude Pro web sub) — emergency only
+    //
+    // NOTE: Claude Pro ($20/mo) is a claude.ai WEB subscription, NOT API credits.
+    // Any "anthropic/*" model in LiteLLM bills against separate Anthropic API credits.
+    // Keep Anthropic API usage near-zero unless you've explicitly topped up API credits.
+    //
+    // NOTE: GitHub Copilot Student (as of March 12 2026) only provides Auto mode
+    // with Claude Haiku 4.5, Gemini 3.1 Pro, and GPT-5.3 Codex. Manual model
+    // selection of Sonnet/Opus/GPT-5.4 is removed. Copilot is IDE-only; it is
+    // NOT routable through this config — use it separately in VS Code / Cursor.
+    // -----------------------------------------------------------------------
+
+    "proxy": "Route ALL providers through LiteLLM. Use scripts/render-openagent-config.sh to generate local or remote configs without editing every model URL by hand.",
+    "litellm_config": "~/.litellm/config.yaml",
+  },
+
+  // =========================================================================
+  //  AGENTS
+  //  Each agent is a named role with a primary model + ordered fallback chain.
+  //  Rules:
+  //   - Exhaust free/quota tier before touching paid.
+  //   - Anthropic models appear in fallbacks ONLY as true last resort.
+  //   - system_prompt_append is additive — keep it focused on the role.
+  // =========================================================================
+  "agents": {
+    // ── ORCHESTRATOR ────────────────────────────────────────────────────────
+    // Top-level task decomposition, delegation, and budget tracking.
+    // Needs reliability and good instruction-following, not max intelligence.
+    // DeepSeek V4 at $0.30/$0.50 + 90% cache discount on repeated system
+    // prompts is the cost-optimal choice; Gemini Flash as cheap quota backup.
+    "sisyphus": {
+      "_role": "ORCHESTRATOR — task decomposition, delegation, token budget tracking",
+      "model": "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
+      "temperature": 0.3,
+      "maxTokens": 8192,
+      "system_prompt_append": "\n\n<role>You are the top-level orchestrator. Before delegating, emit: (1) numbered subtask list, (2) estimated token budget per subtask, (3) which agent type handles each, (4) risk flags. Keep system prompts stable across calls to maximize DeepSeek context cache hits (90% input discount on repeated prefixes).</role>\n\n<skills>Backend arch: .agents/architecture/backend-architect.md | Mobile: .agents/architecture/react-native-architecture.md | Tooling: .agents/tooling/using-superpowers.md</skills>",
+      "fallback_models": [
+        "http://localhost:4000/v1||gemini-3-flash||sk-litellm-master",
+        "http://localhost:4000/v1||gemini-2.5-flash||sk-litellm-master",
+        "http://localhost:4000/v1||gpt-4.1-mini||sk-litellm-master",
+      ],
+    },
+
+    // ── PLANNER ─────────────────────────────────────────────────────────────
+    // Upfront architecture and implementation planning.
+    // Needs strong reasoning; DeepSeek V4 covers most cases.
+    // Falls back to R1 (cheapest reasoning) before anything more expensive.
+    "prometheus": {
+      "_role": "PLANNER — architecture design, implementation roadmaps, risk analysis",
+      "model": "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
+      "temperature": 0.2,
+      "maxTokens": 12000,
+      "system_prompt_append": "\n\n<role>You are the planning specialist. Always emit: (1) numbered steps with token-budget estimates, (2) agent type per step, (3) dependency graph, (4) risk/failure-mode flags. Prefer explicit over implicit; surface ambiguities as questions before proceeding.</role>\n\n<skills>Load domain architecture skill before planning. For Playspace/mobile: .agents/architecture/react-native-architecture.md. For backend/DB: .agents/architecture/backend-architect.md.</skills>",
+      "fallback_models": [
+        "http://localhost:4000/v1||deepseek-r1||sk-litellm-master",
+        "http://localhost:4000/v1||gemini-3.1-pro||sk-litellm-master",
+        "http://localhost:4000/v1||o4-mini||sk-litellm-master",
+      ],
+    },
+
+    // ── PRIMARY CODER ────────────────────────────────────────────────────────
+    // Main implementation workhorse. Gemini 3 Flash first (within Google AI Pro
+    // monthly quota — effectively $0). Falls to Qwen3 (cheapest capable coder),
+    // then DeepSeek V4, then GLM-4.7 before touching premium OpenAI budget.
+    "atlas": {
+      "_role": "CODER — primary implementation, feature development, bug fixes",
+      "model": "http://localhost:4000/v1||gemini-3-flash||sk-litellm-master",
+      "temperature": 0.15,
+      "maxTokens": 16000,
+      "system_prompt_append": "\n\n<role>You are the primary coding agent. Prefer small composable functions, strong TypeScript types, and explicit error handling. Never silently swallow errors. Write self-documenting code; add inline comments only for non-obvious logic.</role>\n\n<skills>Auto-load by stack:\n- FastAPI/Python → .agents/sdks/fastapi.md + sqlalchemy.md\n- Expo/React Native → .agents/sdks/expo.md + tamagui.md (Playspace mobile)\n- Next.js/Web → .agents/sdks/tanstack.md + shadcn.md (Playspace dashboard)\n- All TypeScript → .agents/language/typescript.md\n- Mobile UI → .agents/ui-ux/mobile-design.md</skills>",
+      "fallback_models": [
+        // qwen3-30b-a3b via OpenRouter: ~$0.08/M input — cheapest capable coder
+        "http://localhost:4000/v1||qwen3-30b-a3b||sk-litellm-master",
+        "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
+        "http://localhost:4000/v1||glm-4.7||sk-litellm-master",
+        "http://localhost:4000/v1||gemini-2.5-flash||sk-litellm-master",
+        "http://localhost:4000/v1||gpt-4.1-mini||sk-litellm-master",
+      ],
+    },
+
+    // ── SPECIALIZED CODER (TypeScript / React Native / Expo) ─────────────────
+    // atlas handles general coding; hephaestus is narrowed to the Playspace
+    // mobile stack where Tamagui/Expo/RN context matters a lot.
+    // Qwen2.5-Coder-32B ($0.66/$0.80) is a strong specialized code model.
+    "hephaestus": {
+      "_role": "MOBILE CODER — Expo/React Native/Tamagui specialist (Playspace app)",
+      "model": "http://localhost:4000/v1||gemini-3-flash||sk-litellm-master",
+      "temperature": 0.15,
+      "maxTokens": 16000,
+      "system_prompt_append": "\n\n<role>You are the Expo/React Native specialist. Always use Tamagui primitives (XStack/YStack/Text/styled). Prefer useResponsiveLayout and useDesignSystem hooks. Write for both phone and tablet (responsive). Avoid StyleSheet.create. Test component logic mentally against iOS and Android before outputting.</role>\n\n<skills>.agents/sdks/expo.md + .agents/sdks/tamagui.md + .agents/ui-ux/mobile-design.md + .agents/sdks/tanstack.md (for web dashboard parity)</skills>",
+      "fallback_models": [
+        "http://localhost:4000/v1||qwen2.5-coder-32b||sk-litellm-master",
+        "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
+        "http://localhost:4000/v1||glm-4.7||sk-litellm-master",
+        "http://localhost:4000/v1||gpt-4.1-mini||sk-litellm-master",
+      ],
+    },
+
+    // ── REVIEWER / AUDITOR ───────────────────────────────────────────────────
+    // Code review, security audit, architecture critique.
+    // Gemini 3.1 Pro first (Google AI Pro quota). Falls to Gemini 2.5 Pro
+    // (paid API) before touching the expensive OpenAI/Anthropic tier.
+    "oracle": {
+      "_role": "REVIEWER — code review, security audit, architecture critique, UI/UX audit",
+      "model": "http://localhost:4000/v1||gemini-3.1-pro||sk-litellm-master",
+      "temperature": 0.1,
+      "maxTokens": 8192,
+      "system_prompt_append": "\n\n<role>You are the senior reviewer. Rate every finding: CRITICAL / MAJOR / MINOR / NIT. For UI reviews, address: layout correctness, accessibility (a11y), interaction flows, responsive behavior, color contrast. For code reviews: type safety, error handling, performance, security. Never skip CRITICAL items.</role>\n\n<skills>UI reviews: .agents/ui-ux/ui-ux-pro-max.md + .agents/ui-ux/mobile-design.md. Code reviews: .agents/language/typescript.md. Web: .agents/ui-ux/web-design-guidelines.md.</skills>",
+      "fallback_models": [
+        "http://localhost:4000/v1||gemini-2.5-pro||sk-litellm-master",
+        "http://localhost:4000/v1||kimi-k2.5||sk-litellm-master",
+        "http://localhost:4000/v1||o4-mini||sk-litellm-master",
+        // Anthropic last resort — only if API credits are loaded separately
+        "http://localhost:4000/v1||claude-sonnet-4-6||sk-litellm-master",
+      ],
+    },
+
+    // ── REFACTOR AGENT ───────────────────────────────────────────────────────
+    // Safe, minimal diffs. DeepSeek V4 handles this well at low cost.
+    // Qwen3 as an ultra-cheap secondary option for straightforward refactors.
+    "metis": {
+      "_role": "REFACTOR — safe minimal diffs, localized changes, incremental improvements",
+      "model": "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
+      "temperature": 0.2,
+      "maxTokens": 8192,
+      "system_prompt_append": "\n\n<role>Focus on safe, minimal diffs. Explain any non-trivial change in a comment or inline note. Keep changes localized — don't refactor adjacent code unless it directly enables the task. Prefer pure functions over side effects.</role>",
+      "fallback_models": [
+        "http://localhost:4000/v1||qwen3-30b-a3b||sk-litellm-master",
+        "http://localhost:4000/v1||gpt-4.1-mini||sk-litellm-master",
+        "http://localhost:4000/v1||glm-4.7||sk-litellm-master",
+      ],
+    },
+
+    // ── BOILERPLATE / SCAFFOLDING ────────────────────────────────────────────
+    // CRUD generation, template fills, repetitive code scaffolds.
+    // gpt-4.1-nano at $0.10/M is the cheapest paid option; GLM flash is free.
+    "metis_lite": {
+      "_role": "BOILERPLATE — scaffolding, CRUD generation, template/schema fills",
+      "model": "http://localhost:4000/v1||gpt-4.1-nano||sk-litellm-master",
+      "temperature": 0.2,
+      "maxTokens": 8192,
+      "system_prompt_append": "\n\n<role>Generate idiomatic boilerplate fast. Match the patterns in the relevant SDK skill file. Emit complete files, not partial snippets, unless told otherwise.</role>\n\n<skills>Load the matching .agents/sdks/ skill before generating. Prefer idiomatic patterns from the skill file over generic output.</skills>",
+      "fallback_models": [
+        "http://localhost:4000/v1||glm-4.7-flash||sk-litellm-master",
+        "http://localhost:4000/v1||qwen3-30b-a3b||sk-litellm-master",
+        "http://localhost:4000/v1||glm-4.7||sk-litellm-master",
+      ],
+    },
+
+    // ── RESEARCHER ───────────────────────────────────────────────────────────
+    // Web search, doc lookup, context gathering.
+    // DeepSeek V4 + browser-use skill. Gemini Flash as fast backup.
+    "librarian": {
+      "_role": "RESEARCHER — web search, documentation lookup, context gathering",
+      "model": "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
+      "temperature": 0.4,
+      "maxTokens": 8192,
+      "system_prompt_append": "\n\n<role>You are the research and documentation assistant. Always cite file paths or URLs when referencing information. Summarize as structured markdown. Flag any source older than 6 months. If a library version matters, verify against current docs.</role>\n\n<skills>.agents/tooling/browser-use.md</skills>",
+      "fallback_models": [
+        "http://localhost:4000/v1||gemini-3-flash||sk-litellm-master",
+        "http://localhost:4000/v1||glm-4.7||sk-litellm-master",
+        "http://localhost:4000/v1||gpt-4.1-nano||sk-litellm-master",
+      ],
+    },
+
+    // ── DOCUMENTER ───────────────────────────────────────────────────────────
+    // READMEs, inline docs, changelogs, OpenAPI specs.
+    // Kimi K2.5 shines here: 256K context (entire codebases), strong English prose,
+    // auto-caching reduces cost by 75% on repeated doc passes.
+    "hermes": {
+      "_role": "DOCUMENTER — READMEs, inline TSDoc/JSDoc, changelogs, OpenAPI 3.1 specs",
+      "model": "http://localhost:4000/v1||kimi-k2.5||sk-litellm-master",
+      "temperature": 0.3,
+      "maxTokens": 16000,
+      "system_prompt_append": "\n\n<role>Write GitHub-flavored Markdown for prose docs. Use TSDoc/JSDoc for code. Use OpenAPI 3.1 for API specs. Be concise and scannable — use headers, tables, and code blocks liberally. Audience is future-you and collaborators (Andisha, Professor Loebach).</role>\n\n<skills>.agents/tooling/document-handling.md</skills>",
+      "fallback_models": [
+        "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
+        "http://localhost:4000/v1||gemini-3-flash||sk-litellm-master",
+        "http://localhost:4000/v1||gpt-4.1-mini||sk-litellm-master",
+      ],
+    },
+
+    // ── SUMMARIZER ───────────────────────────────────────────────────────────
+    // Large codebase compression, long-thread digests, big-doc summaries.
+    // Kimi K2.5's 256K context + auto cache hits make it ideal.
+    // K2.6 fallback when raw speed matters over cost (133 tok/s vs 35 tok/s).
+    "mnemosyne": {
+      "_role": "SUMMARIZER — compress large codebases, long threads, large documents",
+      "_note": "Kimi K2.5: 256K context + 75% auto cache discount = ideal for large-context compression",
+      "model": "http://localhost:4000/v1||kimi-k2.5||sk-litellm-master",
+      "temperature": 0.2,
+      "maxTokens": 32000,
+      "fallback_models": [
+        // K2.6 is 4× faster (134 tok/s) if latency matters more than the cost premium
+        "http://localhost:4000/v1||kimi-k2.6||sk-litellm-master",
+        "http://localhost:4000/v1||gemini-3.1-pro||sk-litellm-master",
+        "http://localhost:4000/v1||gemini-2.5-pro||sk-litellm-master",
+      ],
+    },
+
+    // ── REASONER ────────────────────────────────────────────────────────────
+    // Deep multi-step reasoning: math, complex debugging, algorithm design.
+    // DeepSeek R1 first — it's the cheapest reasoning model by a wide margin
+    // ($0.55/$2.19 vs o4-mini's $1.10/$4.40 and o3's $2.00/$8.00).
+    // Use o4-mini only when R1's English instruction-following falls short.
+    "delphi": {
+      "_role": "REASONER — deep multi-step reasoning, algorithm design, complex debugging",
+      "_note": "DeepSeek R1 is cheapest reasoning model — 2× cheaper than o4-mini, 4× cheaper than o3",
+      "model": "http://localhost:4000/v1||deepseek-r1||sk-litellm-master",
+      "temperature": 0.1,
+      "maxTokens": 16000,
+      "system_prompt_append": "\n\n<role>Think step by step. Show your reasoning chain explicitly. For code: explain the algorithm before writing it. For architecture: enumerate tradeoffs and failure modes before recommending. Prefer correctness over speed.</role>",
+      "fallback_models": [
+        "http://localhost:4000/v1||o4-mini||sk-litellm-master",
+        "http://localhost:4000/v1||kimi-k2.5||sk-litellm-master",
+        "http://localhost:4000/v1||o3||sk-litellm-master",
+      ],
+    },
+
+    // ── CRITIC ──────────────────────────────────────────────────────────────
+    // Devil's advocate, assumption challenges, pre-mortem analysis.
+    // Cheap model is fine — the goal is adversarial framing, not capability.
+    "momus": {
+      "_role": "CRITIC — devil's advocate, challenge assumptions, pre-mortem analysis",
+      "model": "http://localhost:4000/v1||glm-4.7||sk-litellm-master",
+      "temperature": 0.7,
+      "maxTokens": 4096,
+      "system_prompt_append": "\n\n<role>Your job is to find problems. Be adversarial but constructive. For every proposed design or implementation, identify: (1) what breaks at scale, (2) what assumptions could be wrong, (3) what the second-order effects are. Output as a numbered list of challenges.</role>",
+      "fallback_models": [
+        "http://localhost:4000/v1||gpt-4.1-mini||sk-litellm-master",
+        "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
+      ],
+    },
+
+    // ── QUICK / INTERACTIVE ──────────────────────────────────────────────────
+    // Fast answers, brainstorming, one-liners.
+    // GLM flash is FREE. Use it as the first line for anything throwaway.
+    "explorer": {
+      "_role": "QUICK — fast answers, brainstorming, conversational Q&A",
+      "_note": "GLM-4.7-Flash is FREE (Z.ai, registered users). 203K context. No quota burn.",
+      "model": "http://localhost:4000/v1||glm-4.7-flash||sk-litellm-master",
+      "temperature": 0.5,
+      "maxTokens": 4096,
+      "system_prompt_append": "\n\n<role>Answer quickly and concisely. When uncertain, say so — never hallucinate. For code snippets, prefer runnable examples over pseudocode.</role>",
+      "fallback_models": [
+        "http://localhost:4000/v1||glm-4.5-flash||sk-litellm-master",
+        "http://localhost:4000/v1||gpt-4.1-nano||sk-litellm-master",
+        "http://localhost:4000/v1||qwen3-30b-a3b||sk-litellm-master",
+      ],
+    },
+
+    // ── UI / MULTIMODAL REVIEWER ─────────────────────────────────────────────
+    // Screenshot analysis, design review, layout critique.
+    // Gemini 3.1 Pro (Google AI Pro quota) has strong vision + reasoning.
+    // Kimi K2.5 fallback for visual coding if Gemini quota hits.
+    "visionary": {
+      "_role": "UI/UX REVIEWER — multimodal design review, layout critique, accessibility audit",
+      "model": "http://localhost:4000/v1||gemini-3.1-pro||sk-litellm-master",
+      "temperature": 0.2,
+      "maxTokens": 8192,
+      "system_prompt_append": "\n\n<role>You are a UI/UX reviewer with vision capability. Be concrete about: (1) layout correctness and pixel alignment, (2) accessibility (contrast ratios, tap targets ≥44px, screen reader hints), (3) Tamagui/Expo-specific patterns for Playspace mobile, (4) responsive behavior on phone vs tablet. Rate issues CRITICAL / MAJOR / MINOR / NIT.</role>\n\n<skills>.agents/ui-ux/ui-ux-pro-max.md + .agents/ui-ux/mobile-design.md + .agents/sdks/tamagui.md + .agents/ui-ux/web-design-guidelines.md + .agents/ui-ux/shadcn.md</skills>",
+      "fallback_models": [
+        "http://localhost:4000/v1||kimi-k2.5||sk-litellm-master",
+        "http://localhost:4000/v1||gemini-2.5-pro||sk-litellm-master",
+        "http://localhost:4000/v1||gpt-5.4-mini||sk-litellm-master",
+      ],
+    },
+
+    // ── DATA / INFRA ─────────────────────────────────────────────────────────
+    // Database design, SQLAlchemy models, migration planning, query optimization.
+    // Relevant to Playspace schema work (Neon.tech, PostgreSQL).
+    "architect": {
+      "_role": "DATA/INFRA — database schema, SQLAlchemy/Alembic, query optimization, backend architecture",
+      "model": "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
+      "temperature": 0.15,
+      "maxTokens": 12000,
+      "system_prompt_append": "\n\n<role>You are the data and infrastructure specialist. For schema design: prefer explicit foreign keys, soft deletes, multilingual-aware text fields, and audit timestamps. For SQLAlchemy: follow the multi-model pattern (Base/Create/Update/Response/InDB). Always consider offline-sync implications for mobile (Playspace context).</role>\n\n<skills>.agents/sdks/sqlalchemy.md + .agents/architecture/backend-architect.md + .agents/sdks/fastapi.md</skills>",
+      "fallback_models": [
+        "http://localhost:4000/v1||deepseek-r1||sk-litellm-master",
+        "http://localhost:4000/v1||gemini-3.1-pro||sk-litellm-master",
+        "http://localhost:4000/v1||o4-mini||sk-litellm-master",
+      ],
+    },
+  },
+
+  // =========================================================================
+  //  CATEGORIES
+  //  Task-intensity routing used when an explicit agent isn't selected.
+  //  Each category maps to the cheapest appropriate model for that workload.
+  //  Ordered comment-first = intended primary; fallback chain is automatic.
+  // =========================================================================
+  "categories": {
+    // Trivial: routing, classification, short lookups → free tier first
+    "quick": {
+      "_note": "FREE: GLM-4.7-Flash (Z.ai registered users)",
+      "model": "http://localhost:4000/v1||glm-4.7-flash||sk-litellm-master",
+    },
+
+    // Boilerplate: scaffold generation, template fills → nano ($0.10/M)
+    "boilerplate": {
+      "_note": "gpt-4.1-nano $0.10/M, 2.5M tok/day budget",
+      "model": "http://localhost:4000/v1||gpt-4.1-nano||sk-litellm-master",
+      "fallback": "http://localhost:4000/v1||glm-4.7-flash||sk-litellm-master",
+    },
+
+    // Coding: general implementation → Gemini 3 Flash (quota, free) first
+    "coding": {
+      "_note": "Gemini 3 Flash free within Google AI Pro quota; falls to Qwen3 (~$0.08/M) then DeepSeek V4",
+      "model": "http://localhost:4000/v1||gemini-3-flash||sk-litellm-master",
+      "fallback": "http://localhost:4000/v1||qwen3-30b-a3b||sk-litellm-master",
+      "system_prompt_append": "\n\n<skills>TypeScript: .agents/language/typescript.md. Stack-specific skills as needed.</skills>",
+    },
+
+    // Mobile UI: Expo/RN/Tamagui-specific coding
+    "ui-engineering": {
+      "_note": "Gemini 3 Flash (quota) → Qwen2.5-Coder-32B ($0.66/M) for RN/Tamagui work",
+      "model": "http://localhost:4000/v1||gemini-3-flash||sk-litellm-master",
+      "fallback": "http://localhost:4000/v1||qwen2.5-coder-32b||sk-litellm-master",
+      "system_prompt_append": "\n\n<skills>.agents/ui-ux/mobile-design.md + .agents/sdks/tamagui.md + .agents/sdks/expo.md + .agents/ui-ux/ui-ux-pro-max.md</skills>",
+    },
+
+    // Web engineering: Next.js / TanStack / shadcn
+    "web-engineering": {
+      "_note": "Gemini 3 Flash (quota) → Qwen3 (~$0.08/M) for Next.js/TanStack work",
+      "model": "http://localhost:4000/v1||gemini-3-flash||sk-litellm-master",
+      "fallback": "http://localhost:4000/v1||qwen3-30b-a3b||sk-litellm-master",
+      "system_prompt_append": "\n\n<skills>.agents/ui-ux/web-design-guidelines.md + .agents/sdks/shadcn.md + .agents/sdks/tanstack.md + .agents/language/typescript.md</skills>",
+    },
+
+    // Reasoning: anything needing chain-of-thought → R1 first (cheapest)
+    "reasoning": {
+      "_note": "DeepSeek R1 = cheapest reasoning ($0.55/$2.19). Use before o4-mini or o3.",
+      "model": "http://localhost:4000/v1||deepseek-r1||sk-litellm-master",
+      "fallback": "http://localhost:4000/v1||o4-mini||sk-litellm-master",
+    },
+
+    // Deep reasoning: hardest problems → o4-mini before burning o3 budget
+    "deep-reasoning": {
+      "_note": "o4-mini $1.10/$4.40 — save o3 ($2/$8) for council/premium only",
+      "model": "http://localhost:4000/v1||o4-mini||sk-litellm-master",
+      "fallback": "http://localhost:4000/v1||o3||sk-litellm-master",
+    },
+
+    // Planning: architecture and roadmap planning → DeepSeek V4
+    "planning": {
+      "_note": "DeepSeek V4 $0.30/$0.50 — 90% cache discount on repeated system prompts",
+      "model": "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
+      "fallback": "http://localhost:4000/v1||gemini-3-flash||sk-litellm-master",
+    },
+
+    // Review: code and design review → Gemini 3.1 Pro (quota) first
+    "review": {
+      "_note": "Gemini 3.1 Pro free within Google AI Pro quota; falls to 2.5 Pro (paid API)",
+      "model": "http://localhost:4000/v1||gemini-3.1-pro||sk-litellm-master",
+      "fallback": "http://localhost:4000/v1||gemini-2.5-pro||sk-litellm-master",
+    },
+
+    // Docs: writing and documentation → Kimi K2.5 (256K ctx, auto-cache)
+    "docs": {
+      "_note": "Kimi K2.5 256K context + 75% auto-cache discount on repeated codebase context",
+      "model": "http://localhost:4000/v1||kimi-k2.5||sk-litellm-master",
+      "fallback": "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
+    },
+
+    // Summarization: large-context compression → Kimi K2.5 (256K)
+    "summarization": {
+      "_note": "Kimi K2.5: 256K context ideal for codebase-scale summarization",
+      "model": "http://localhost:4000/v1||kimi-k2.5||sk-litellm-master",
+      "fallback": "http://localhost:4000/v1||gemini-3.1-pro||sk-litellm-master",
+    },
+
+    // Data/infra: DB schema, migrations, backend → DeepSeek V4
+    "data-infra": {
+      "_note": "DeepSeek V4 handles SQL/SQLAlchemy well at $0.30/$0.50",
+      "model": "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
+      "fallback": "http://localhost:4000/v1||deepseek-r1||sk-litellm-master",
+      "system_prompt_append": "\n\n<skills>.agents/sdks/sqlalchemy.md + .agents/architecture/backend-architect.md</skills>",
+    },
+
+    // Git: commit messages, branch ops, PR descriptions → nano (overkill for git)
+    "git": {
+      "_note": "gpt-4.1-nano $0.10/M — atomic commits, clear messages, safe ops only",
+      "model": "http://localhost:4000/v1||gpt-4.1-nano||sk-litellm-master",
+      "fallback": "http://localhost:4000/v1||glm-4.7-flash||sk-litellm-master",
+      "system_prompt_append": "\n\n<role>Focus on atomic commits with clear conventional-commit messages. Safe operations only. Always confirm before force-push or rebase on shared branches.</role>",
+    },
+
+    // Premium: tasks that genuinely require the best available model
+    // Burn 250K OpenAI premium budget here when truly necessary.
+    "premium": {
+      "_note": "250K/day OpenAI premium budget. Use sparingly — try o3 before gpt-5.4.",
+      "model": "http://localhost:4000/v1||o3||sk-litellm-master",
+      "fallback": "http://localhost:4000/v1||gpt-5.4||sk-litellm-master",
+    },
+
+    // ML tasks: statistics, ECE-style signal processing, model eval
+    "ml-tasks": {
+      "_note": "o4-mini handles ML reasoning well at mid-tier cost",
+      "model": "http://localhost:4000/v1||o4-mini||sk-litellm-master",
+      "fallback": "http://localhost:4000/v1||deepseek-r1||sk-litellm-master",
+    },
+  },
+
+  // =========================================================================
+  //  COUNCIL
+  //  Multi-model deliberation for high-stakes architectural decisions.
+  //  Master synthesizes responses from alpha/beta/gamma into a final answer.
+  //
+  //  Usage:
+  //    /council          → default preset (cost-optimized, ~$0 quota usage)
+  //    /council heavy    → premium preset (burns ~250K OpenAI budget fast — use sparingly)
+  // =========================================================================
+  "council": {
+    "_note": "Master synthesizes; alpha/beta/gamma deliberate in parallel.",
+    "master": {
+      "model": "http://localhost:4000/v1||gemini-3.1-pro||sk-litellm-master",
+      "_note": "Gemini 3.1 Pro within Google AI Pro quota — free synthesis",
+    },
+    "presets": {
+      // Cost-optimized: all free/quota/cheap routes — safe for daily use
+      "default": {
+        "_note": "Zero/near-zero cost council — uses free and quota-tier models",
+        "alpha": {
+          "model": "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
+          "_note": "Strong coder/reasoner at $0.30/$0.50",
+        },
+        "beta": {
+          "model": "http://localhost:4000/v1||gemini-3-flash||sk-litellm-master",
+          "_note": "Google AI Pro quota — effectively free",
+        },
+        "gamma": {
+          "model": "http://localhost:4000/v1||kimi-k2.5||sk-litellm-master",
+          "_note": "256K context perspective at $0.60/$2.50",
+        },
+      },
+
+      // Premium: highest quality — burns 250K OpenAI budget in minutes, use rarely
+      "heavy": {
+        "_note": "PREMIUM COUNCIL — use for Playspace architecture decisions, not daily tasks",
+        "alpha": {
+          "model": "http://localhost:4000/v1||o3||sk-litellm-master",
+          "_note": "$2/$8 per million; deepest OpenAI reasoning",
+        },
+        "beta": {
+          "model": "http://localhost:4000/v1||gemini-3.1-pro||sk-litellm-master",
+          "_note": "Google AI Pro quota; strong vision + reasoning",
+        },
+        "gamma": {
+          "model": "http://localhost:4000/v1||kimi-k2.5||sk-litellm-master",
+          "_note": "256K context; useful for full-codebase perspective in council",
+        },
+      },
+
+      // Reasoning-focused: all three are chain-of-thought models
+      "reason": {
+        "_note": "Use when the question requires explicit multi-step logic across perspectives",
+        "alpha": {
+          "model": "http://localhost:4000/v1||deepseek-r1||sk-litellm-master",
+          "_note": "Cheapest reasoning model; covers most R1-level tasks",
+        },
+        "beta": {
+          "model": "http://localhost:4000/v1||o4-mini||sk-litellm-master",
+          "_note": "Strong reasoning at mid cost; good English instruction following",
+        },
+        "gamma": {
+          "model": "http://localhost:4000/v1||kimi-k2.5||sk-litellm-master",
+          "_note": "K2.5 thinking mode; visual reasoning if diagrams are in context",
+        },
+      },
+    },
+  },
+
+  // =========================================================================
+  //  PROVIDER CONCURRENCY LIMITS
+  //  Prevent runaway costs from parallel agent tasks hammering expensive APIs.
+  //  Numbers represent max simultaneous in-flight requests per provider.
+  // =========================================================================
+  "background_task": {
+    "providerConcurrency": {
+      "anthropic": 1, // API credits are NOT Claude Pro web sub — treat as emergency
+      "openai": 3, // 250K premium / 2.5M mini-nano daily budgets
+      "google": 8, // Generous: covered by AI Pro quota
+      "deepseek": 12, // Cheap enough to parallelize freely
+      "kimi": 4, // K2.5 has rate limits tied to cumulative recharge tier
+      "zhipu": 10, // GLM flash is free; parallelism is fine
+      "qwen": 8, // Via OpenRouter or Alibaba Cloud API
+    },
+    "modelConcurrency": {
+      // Hard caps per model to prevent runaway spend
+      "anthropic/claude-sonnet-4-6": 1, // emergency only
+      "openai/o3": 1, // $2/$8 — very precious
+      "openai/gpt-5.4": 1, // $2.50/$15 — very precious
+      "openai/o4-mini": 2,
+      "openai/gpt-4.1-mini": 4,
+      "openai/gpt-4.1-nano": 10,
+      "deepseek/deepseek-v4": 12,
+      "deepseek/deepseek-r1": 4,
+      "google/gemini-3.1-pro": 5,
+      "google/gemini-3-flash": 8,
+      "kimi/kimi-k2.5": 3,
+      "zhipu/glm-4.7-flash": 20, // free; no reason to cap hard
+      "zhipu/glm-4.7": 6,
+      "qwen/qwen3-30b-a3b": 8,
+      "qwen/qwen2.5-coder-32b": 6,
+    },
+  },
+
+  // =========================================================================
+  //  LITELLM MODEL ALIASES
+  //  Maps the short names used above to the actual LiteLLM model strings.
+  //  Keep this in sync with ~/.litellm/config.yaml.
+  //  Reference: https://docs.litellm.ai/docs/providers
+  // =========================================================================
+  "_litellm_aliases": {
+    "_note": "These are reference mappings — configure the actual routing in config.yaml",
+
+    // Free tier
+    "glm-4.7-flash": "zhipu/glm-4.7-flash",
+    "glm-4.5-flash": "zhipu/glm-4.5-flash",
+
+    // Google (AI Studio key — covered by AI Pro quota)
+    "gemini-3-flash": "gemini/gemini-3-flash-latest",
+    "gemini-3.1-pro": "gemini/gemini-3.1-pro-preview",
+    "gemini-2.5-flash": "gemini/gemini-2.5-flash",
+    "gemini-2.5-pro": "gemini/gemini-2.5-pro",
+
+    // DeepSeek
+    "deepseek-v4": "deepseek/deepseek-chat", // V4 is the current deepseek-chat alias
+    "deepseek-r1": "deepseek/deepseek-reasoner",
+
+    // OpenAI — nano/mini from 2.5M/day budget; premium from 250K/day budget
+    "gpt-4.1-nano": "openai/gpt-4.1-nano",
+    "gpt-4.1-mini": "openai/gpt-4.1-mini",
+    "gpt-5.4-mini": "openai/gpt-5.4-mini",
+    "o4-mini": "openai/o4-mini",
+    "o3": "openai/o3",
+    "gpt-5.4": "openai/gpt-5.4",
+
+    // Kimi (Moonshot AI)
+    "kimi-k2.5": "openai/kimi-k2.5", // via api.moonshot.ai/v1 in LiteLLM
+    "kimi-k2.6": "openai/kimi-k2.6",
+
+    // GLM (Z.ai / Zhipu)
+    "glm-4.7": "zhipu/glm-4.7",
+    "glm-5": "zhipu/glm-5",
+
+    // Qwen (Alibaba Cloud or via OpenRouter)
+    "qwen3-30b-a3b": "openrouter/qwen/qwen3-30b-a3b",
+    "qwen2.5-coder-32b": "openrouter/qwen/qwen2.5-coder-32b-instruct",
+    "qwen-max": "qwen/qwen-max",
+
+    // Anthropic — EMERGENCY ONLY (requires separate API credit top-up)
+    "claude-sonnet-4-6": "anthropic/claude-sonnet-4-6",
+  },
+
+  // =========================================================================
+  //  EXPERIMENTAL
+  // =========================================================================
+  "experimental": {
+    "aggressive_truncation": true,
+    "task_system": true,
+    "council_streaming": false, // disable until council preset is stable
+  },
+
+  "tmux": {
+    "enabled": false, // re-enable when you want agents to spawn terminal sessions
+  },
+}

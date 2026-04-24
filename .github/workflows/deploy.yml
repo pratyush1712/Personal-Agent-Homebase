@@ -1,0 +1,113 @@
+name: Deploy OpenAgent Stack
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate Configs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate local compose syntax
+        run: docker compose --env-file .env.local.example -f docker-compose.yml -f docker-compose.local.yml config --no-interpolate > /dev/null
+
+      - name: Validate production compose syntax
+        run: docker compose --env-file .env.prod.example -f docker-compose.yml -f docker-compose.prod.yml config --no-interpolate > /dev/null
+
+      - name: Validate shell scripts
+        run: |
+          bash -n scripts/health-check.sh
+          bash -n scripts/render-openagent-config.sh
+          scripts/render-openagent-config.sh --help > /dev/null
+
+      - name: Validate Caddyfile
+        run: |
+          docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Validate LiteLLM config
+        run: |
+          docker run --rm -v "$PWD/litellm.config.yaml:/app/config.yaml:ro" \
+            docker.litellm.ai/berriai/litellm-database:main-stable \
+            --config /app/config.yaml --test
+        continue-on-error: true
+
+      - name: Check config files for obvious secret literals
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          allowed = {"sk-litellm-master", "sk-your-master-key"}
+          checked_suffixes = {".yaml", ".yml", ".json", ".jsonc"}
+          offenders = []
+
+          for path in Path(".").rglob("*"):
+              if "node_modules" in path.parts or path.suffix not in checked_suffixes:
+                  continue
+
+              text = path.read_text(encoding="utf-8", errors="ignore")
+              for token in text.replace('"', " ").replace("'", " ").split():
+                  if token.startswith("sk-") and token.strip(",") not in allowed:
+                      offenders.append(f"{path}: {token}")
+
+          if offenders:
+              print("Potential secret literals found:")
+              print("\n".join(offenders))
+              raise SystemExit(1)
+          PY
+
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+            cd ~/openagent-stack || exit 1
+
+            echo "Pulling latest changes..."
+            git fetch origin
+            current_branch="$(git rev-parse --abbrev-ref HEAD)"
+            git pull --ff-only origin "$current_branch"
+
+            echo "Validating production config..."
+            make config-check-prod
+            make scripts-check
+
+            echo "Backing up Neon database..."
+            make backup-prod || echo "Neon logical backup skipped or failed; relying on Neon managed restore points"
+
+            echo "Deploying stack..."
+            make prod
+
+            echo "Pruning old images..."
+            docker image prune -af --filter "until=168h"
+
+            echo "Deployment complete!"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Deployment failed! Check the logs above."

@@ -1,0 +1,584 @@
+# LiteLLM Proxy — Pratyush Sudhakar
+# Start:     litellm --config litellm-proxy.yaml --port 4000
+# Dashboard: http://localhost:4000/ui
+# Docs:      https://docs.litellm.ai/docs/proxy/configs
+#
+# ── COST HIERARCHY (exhaust each tier before moving down) ─────────────
+#
+#  TIER 0  FREE      glm-4.7-flash, glm-4.5-flash     Z.ai registered users, zero cost
+#  TIER 1  QUOTA     gemini-3-flash, gemini-3.1-pro    Google AI Pro $19.99/mo, ~zero cost
+#  TIER 2  CHEAP     deepseek-v4   $0.30/$0.50/M       81% SWE-bench, 90% cache discount
+#                    gpt-4.1-nano  $0.10/$0.40/M       2.5M tok/day; boilerplate/git
+#                    qwen3-30b-a3b ~$0.08/$0.28/M      Cheapest capable coder (OpenRouter)
+#                    glm-4.7       $0.39/$1.75/M       73.8% SWE-bench, 203K ctx
+#  TIER 3  MID       kimi-k2.5     $0.60/$2.50/M       256K ctx, 75% auto-cache discount
+#                    deepseek-r1   $0.55/$2.19/M       Cheapest reasoning model
+#                    gpt-4.1-mini  $0.40/$1.60/M       1M ctx, 2.5M/day budget
+#                    qwen2.5-coder $0.66/$0.80/M       Specialized code generation
+#  TIER 4  PREMIUM   gemini-2.5-flash $0.10/$0.40/M   Paid fallback after Gemini quota
+#                    gemini-2.5-pro   paid API         Paid fallback after Gemini quota
+#                    o4-mini       $1.10/$4.40/M       After R1 fails; 250K/day budget
+#                    kimi-k2.6     $0.95/$4.00/M       134 tok/s; speed > cost
+#                    gpt-5.4-mini  $0.75/$4.50/M       250K/day budget
+#  TIER 5  LAST      o3            $2.00/$8.00/M       Council + hardest problems
+#                    gpt-5.4       $2.50/$15.00/M      Burn 250K budget sparingly
+#                    claude-sonnet-4-6                  Claude fallback through configured provider
+#                    claude-sonnet (direct)             REQUIRES separate Anthropic API credits
+#                                                       Claude Pro ($20/mo) is Web-ONLY, not API
+# ─────────────────────────────────────────────────────────────────────
+#
+# ── ENV VARS REQUIRED ────────────────────────────────────────────────
+# GOOGLE_AI_STUDIO_API_KEY  — Google AI Studio (ai.google.dev)
+# DEEPSEEK_API_KEY          — platform.deepseek.com
+# OPENAI_API_KEY            — platform.openai.com
+# KIMI_API_KEY              — api.moonshot.cn
+# GLM_API_KEY               — open.bigmodel.cn  (Z.ai / Zhipu)
+# OPENROUTER_API_KEY        — openrouter.ai      (Qwen + any OR-routed models)
+# VERTEX_PROJECT_ID         — GCP project with Vertex AI + Claude model access
+# ANTHROPIC_API_KEY         — console.anthropic.com (separate top-up, NOT Claude Pro web sub)
+# LITELLM_MASTER_KEY        — your chosen proxy auth token (e.g. sk-pratyush-local)
+# ─────────────────────────────────────────────────────────────────────
+#
+# Operational policy:
+# - Keep stable, frequently used models active in model_list.
+# - Keep newly released or provider-ambiguous models commented or clearly marked
+#   with VERIFY notes until their provider IDs are confirmed.
+# - Fallback chains must only reference model_name values that exist below.
+
+model_list:
+  # ══════════════════════════════════════════════════════════════════
+  # TIER 0 — FREE (Z.ai / Zhipu — zero cost, always available)
+  # ══════════════════════════════════════════════════════════════════
+
+  # GLM-4.7-Flash: primary free model. 203K context.
+  # Route: agent explorer, category quick, all git ops, cheap fallbacks.
+  - model_name: glm-4.7-flash
+    litellm_params:
+      model: openai/glm-4-flash # OpenAI-compatible endpoint for GLM-4-Flash
+      api_base: https://open.bigmodel.cn/api/paas/v4/
+      api_key: os.environ/GLM_API_KEY
+    model_info:
+      input_cost_per_token: 0.0 # Free for all registered Z.ai users
+      output_cost_per_token: 0.0
+
+  # GLM-4.5-Flash: lighter fallback within the free tier.
+  - model_name: glm-4.5-flash
+    litellm_params:
+      model: openai/glm-4-flash # Same endpoint — verify if Zhipu exposes a
+      api_base: https://open.bigmodel.cn/api/paas/v4/ # separate glm-4.5-flash model ID
+      api_key: os.environ/GLM_API_KEY
+    model_info:
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+
+  # ══════════════════════════════════════════════════════════════════
+  # TIER 1 — SUBSCRIPTION (Google AI Pro $19.99/mo — ~zero marginal cost)
+  # Use these BEFORE any paid API call. Exhaust monthly quota first.
+  # ══════════════════════════════════════════════════════════════════
+
+  # Gemini 3 Flash: primary coding/implementation model.
+  # Agent atlas, category coding, ui-engineering, web-engineering.
+  - model_name: gemini-3-flash
+    litellm_params:
+      model: gemini/gemini-3-flash-latest
+      api_key: os.environ/GOOGLE_AI_STUDIO_API_KEY
+    model_info:
+      input_cost_per_token: 0.0 # Within AI Pro monthly quota
+      output_cost_per_token: 0.0
+
+  # Gemini 3.1 Pro: primary review/critique/UI-audit model.
+  # Agent oracle, visionary, council master. Falls back to gemini-2.5-pro.
+  - model_name: gemini-3.1-pro
+    litellm_params:
+      model: gemini/gemini-3.1-pro-preview
+      api_key: os.environ/GOOGLE_AI_STUDIO_API_KEY
+    model_info:
+      input_cost_per_token: 0.0 # Within AI Pro monthly quota
+      output_cost_per_token: 0.0
+
+  # ══════════════════════════════════════════════════════════════════
+  # TIER 2 — ULTRA-CHEAP PAID APIs
+  # ══════════════════════════════════════════════════════════════════
+
+  # DeepSeek V4: orchestration, planning, refactor, data/infra.
+  # 81% SWE-bench. Automatic 90% cache discount on repeated prefixes.
+  # deepseek-chat currently maps to the V4 flagship — verify at api-docs.deepseek.com
+  - model_name: deepseek-v4
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000003 # $0.30/M
+      output_cost_per_token: 0.0000005 # $0.50/M
+
+  # DeepSeek R1: cheapest reasoning model — use BEFORE o4-mini and o3.
+  # deepseek-reasoner = R1. Chain-of-thought; longer outputs; still cheaper than o4-mini.
+  - model_name: deepseek-r1
+    litellm_params:
+      model: deepseek/deepseek-reasoner
+      api_key: os.environ/DEEPSEEK_API_KEY
+    model_info:
+      input_cost_per_token: 0.00000055 # $0.55/M
+      output_cost_per_token: 0.00000219 # $2.19/M
+
+  # GLM-4.7 (paid): strong coding model, 203K context, 73.8% SWE-bench.
+  # VERIFY: Zhipu model ID for GLM-4.7 — may be glm-4-plus or glm-4.7 in their API.
+  - model_name: glm-4.7
+    litellm_params:
+      model: openai/glm-4-plus # VERIFY this model ID against open.bigmodel.cn
+      api_base: https://open.bigmodel.cn/api/paas/v4/
+      api_key: os.environ/GLM_API_KEY
+    model_info:
+      input_cost_per_token: 0.00000039 # $0.39/M
+      output_cost_per_token: 0.00000175 # $1.75/M
+
+  # Qwen3-30B-A3B via OpenRouter: cheapest capable coder (~$0.08/M input).
+  # MoE model, 30.5B total / 3.3B active. Strong for coding and agentic tasks.
+  - model_name: qwen3-30b-a3b
+    litellm_params:
+      model: openrouter/qwen/qwen3-30b-a3b
+      api_key: os.environ/OPENROUTER_API_KEY
+    model_info:
+      input_cost_per_token: 0.00000008 # ~$0.08/M via OpenRouter
+      output_cost_per_token: 0.00000028 # ~$0.28/M
+
+  # ══════════════════════════════════════════════════════════════════
+  # TIER 3 — OPENAI NANO/MINI (2.5M tokens/day budget)
+  # ══════════════════════════════════════════════════════════════════
+
+  # gpt-4.1-nano: cheapest OpenAI model. Boilerplate, git ops, scaffolding.
+  - model_name: gpt-4.1-nano
+    litellm_params:
+      model: openai/gpt-4.1-nano
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000001 # $0.10/M
+      output_cost_per_token: 0.0000004 # $0.40/M
+
+  # gpt-4.1-mini: 1M context, strong instruction following. 2.5M/day budget.
+  - model_name: gpt-4.1-mini
+    litellm_params:
+      model: openai/gpt-4.1-mini
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000004 # $0.40/M
+      output_cost_per_token: 0.0000016 # $1.60/M
+
+  # o4-mini: reasoning fallback after deepseek-r1. Still in 2.5M/day budget.
+  # Chain-of-thought model; reasoning tokens count as output tokens for billing.
+  - model_name: o4-mini
+    litellm_params:
+      model: openai/o4-mini
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000011 # $1.10/M
+      output_cost_per_token: 0.0000044 # $4.40/M
+
+  # ══════════════════════════════════════════════════════════════════
+  # TIER 4 — MID-TIER APIs
+  # ══════════════════════════════════════════════════════════════════
+
+  # Kimi K2.5: 256K context, auto 75% cache discount. Docs/summarization primary.
+  # VERIFY model ID: check api.moonshot.cn/v1 for the exact K2.5 string.
+  # moonshot-v1-256k is the expected 256K variant; may differ after K2.6 release.
+  - model_name: kimi-k2.5
+    litellm_params:
+      model: openai/moonshot-v1-256k # OpenAI-compatible via Moonshot API
+      api_base: https://api.moonshot.cn/v1
+      api_key: os.environ/KIMI_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000006 # $0.60/M
+      output_cost_per_token: 0.0000025 # $2.50/M
+
+  # Kimi K2.6: released 2026-04-20. 4× faster (134 tok/s vs 35 tok/s on K2.5).
+  # Use when latency is more important than cost. 256K context.
+  # VERIFY model ID: K2.6 may use a new string — check api.moonshot.cn/v1 docs.
+  - model_name: kimi-k2.6
+    litellm_params:
+      model: openai/moonshot-v1-256k-latest # VERIFY — K2.6 may have own model ID
+      api_base: https://api.moonshot.cn/v1
+      api_key: os.environ/KIMI_API_KEY
+    model_info:
+      input_cost_per_token: 0.00000095 # $0.95/M
+      output_cost_per_token: 0.000004 # $4.00/M
+
+  # Qwen2.5-Coder-32B via OpenRouter: specialized code generation.
+  # Used by hephaestus (mobile/RN agent) as a focused coding fallback.
+  - model_name: qwen2.5-coder-32b
+    litellm_params:
+      model: openrouter/qwen/qwen2.5-coder-32b-instruct
+      api_key: os.environ/OPENROUTER_API_KEY
+    model_info:
+      input_cost_per_token: 0.00000066 # $0.66/M
+      output_cost_per_token: 0.0000008 # $0.80/M
+
+  # GLM-5: flagship GLM model (745B total, 44B active). Claude-Opus-level coding claims.
+  # VERIFY model ID: may be glm-5 or another string in the Z.ai API.
+  - model_name: glm-5
+    litellm_params:
+      model: openai/glm-5 # VERIFY against open.bigmodel.cn
+      api_base: https://open.bigmodel.cn/api/paas/v4/
+      api_key: os.environ/GLM_API_KEY
+    model_info:
+      input_cost_per_token: 0.000001 # ~$1.00/M (30% higher than GLM-4.7)
+      output_cost_per_token: 0.000003 # approx
+
+  # ══════════════════════════════════════════════════════════════════
+  # TIER 5 — GOOGLE PAID API (fallback when AI Pro quota is exhausted)
+  # ══════════════════════════════════════════════════════════════════
+
+  # Gemini 2.5 Flash: cheapest paid Google model. Excellent value at $0.10/M.
+  - model_name: gemini-2.5-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GOOGLE_AI_STUDIO_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000001 # $0.10/M
+      output_cost_per_token: 0.0000004 # $0.40/M
+
+  # Gemini 2.5 Pro: paid fallback for review/reasoning after 3.1-pro quota.
+  - model_name: gemini-2.5-pro
+    litellm_params:
+      model: gemini/gemini-2.5-pro
+      api_key: os.environ/GOOGLE_AI_STUDIO_API_KEY
+
+  # ══════════════════════════════════════════════════════════════════
+  # TIER 6 — OPENAI PREMIUM (250K tokens/day TOTAL — guard carefully)
+  # ══════════════════════════════════════════════════════════════════
+
+  # gpt-5.4-mini: mid-premium. Cheaper than full gpt-5.4; from the 250K/day budget.
+  - model_name: gpt-5.4-mini
+    litellm_params:
+      model: openai/gpt-5.4-mini
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      input_cost_per_token: 0.00000075 # $0.75/M
+      output_cost_per_token: 0.0000045 # $4.50/M
+
+  # gpt-4.1: 1M context. Use for large-codebase OpenAI-ecosystem tasks.
+  - model_name: gpt-4.1
+    litellm_params:
+      model: openai/gpt-4.1
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      input_cost_per_token: 0.000002 # $2.00/M
+      output_cost_per_token: 0.000008 # $8.00/M
+
+  # o3: council and hardest problems. Model-level $2/day hard cap as safety net.
+  - model_name: o3
+    litellm_params:
+      model: openai/o3
+      api_key: os.environ/OPENAI_API_KEY
+      max_budget: 2.00 # $2/day model-level cap (on top of provider budget)
+      budget_duration: 1d
+    model_info:
+      input_cost_per_token: 0.000002 # $2.00/M
+      output_cost_per_token: 0.000008 # $8.00/M
+
+  # gpt-5.4: absolute OpenAI last resort. Model-level $1/day cap.
+  - model_name: gpt-5.4
+    litellm_params:
+      model: openai/gpt-5.4
+      api_key: os.environ/OPENAI_API_KEY
+      max_budget: 1.00 # $1/day model-level cap
+      budget_duration: 1d
+    model_info:
+      input_cost_per_token: 0.0000025 # $2.50/M
+      output_cost_per_token: 0.000015 # $15.00/M
+
+  # ══════════════════════════════════════════════════════════════════
+  # TIER 7 — CLAUDE VIA VERTEX AI (cheaper billing than direct Anthropic)
+  # Requires: GCP project with Vertex AI enabled + Claude model access approved.
+  # NOTE: This is NOT covered by Claude Pro ($20/mo web subscription).
+  #       Vertex AI Claude bills against your GCP project directly.
+  # ══════════════════════════════════════════════════════════════════
+
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: gemini/claude-sonnet-4-6
+      api_key: os.environ/GOOGLE_AI_STUDIO_API_KEY
+
+  - model_name: claude-opus-4-6
+    litellm_params:
+      model: gemini/claude-opus-4-6
+      api_key: os.environ/GOOGLE_AI_STUDIO_API_KEY
+
+  # ══════════════════════════════════════════════════════════════════
+  # TIER 8 — ANTHROPIC DIRECT (absolute last resort)
+  # IMPORTANT: Requires a SEPARATE Anthropic API credit top-up.
+  # Claude Pro ($20/mo) is a claude.ai WEB subscription only — it does NOT
+  # provide API credits. You must add credits at console.anthropic.com separately.
+  # ══════════════════════════════════════════════════════════════════
+
+  - model_name: claude-haiku
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      input_cost_per_token: 0.000001 # $1.00/M
+      output_cost_per_token: 0.000005 # $5.00/M
+
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      input_cost_per_token: 0.000003 # $3.00/M
+      output_cost_per_token: 0.000015 # $15.00/M
+
+  - model_name: claude-opus
+    litellm_params:
+      model: anthropic/claude-opus-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      input_cost_per_token: 0.000005 # $5.00/M
+      output_cost_per_token: 0.000025 # $25.00/M
+
+# ═════════════════════════════════════════════════════════════════════
+# ROUTER SETTINGS
+# Docs: https://docs.litellm.ai/docs/proxy/reliability
+#       https://docs.litellm.ai/docs/proxy/provider_budget_routing
+# ═════════════════════════════════════════════════════════════════════
+
+router_settings:
+  routing_strategy: least-busy # Options: simple-shuffle | least-busy | usage-based-routing | latency-based-routing
+  num_retries: 3 # Retries on the SAME model before triggering fallback
+  allowed_fails: 2 # Failures before a model enters cooldown
+  cooldown_time: 60 # Seconds a model stays in cooldown after allowed_fails
+
+  # ── Provider Budget Guardrails ────────────────────────────────────
+  # Docs: https://docs.litellm.ai/docs/proxy/provider_budget_routing
+  # When a provider hits its budget, LiteLLM automatically routes to
+  # the next model in the fallback chain. Requires Redis for persistence
+  # across restarts; without it, budgets reset on proxy restart.
+  # Provider names must match LiteLLM's provider strings exactly.
+  provider_budget_config:
+    openai:
+      budget_limit: 3.00 # $3/day total across all OpenAI models
+      time_period: 1d
+    anthropic:
+      budget_limit: 1.00 # $1/day — API credits ≠ Claude Pro web sub
+      time_period: 1d
+    deepseek:
+      budget_limit: 1.00 # $1/day ≈ 3.3M input tokens at V4 pricing
+      time_period: 1d
+    moonshot:
+      budget_limit: 0.50 # $0.50/day for Kimi K2.5/K2.6
+      time_period: 1d
+    gemini:
+      budget_limit: 0.50 # Paid API fallback only; quota usage is free
+      time_period: 1d
+    openrouter:
+      budget_limit: 1.00 # $1/day across all OpenRouter-routed models (Qwen, etc.)
+      time_period: 1d
+    google:
+      budget_limit: 0.50 # $0.50/day for Google models
+      time_period: 1d
+    # vertex_ai: billed to GCP project directly — monitor in GCP console
+    # zhipu/glm: free tier = no budget needed; paid models (glm-4.7, glm-5) are minimal cost
+
+  # ── Fallback Chains ───────────────────────────────────────────────
+  # Docs: https://docs.litellm.ai/docs/proxy/reliability
+  # Format: list of single-key dicts: {primary: [fallback1, fallback2]}
+  # Tried in order after num_retries exhausted on primary.
+  fallbacks:
+    # ── Free tier internal fallbacks
+    - glm-4.7-flash:
+        - glm-4.5-flash
+        - gpt-4.1-nano
+    - glm-4.5-flash:
+        - gpt-4.1-nano
+        - qwen3-30b-a3b
+
+    # ── Coding primary (Gemini 3 Flash — Google AI Pro quota)
+    - gemini-3-flash:
+        - qwen3-30b-a3b
+        - deepseek-v4
+        - glm-4.7
+        - gemini-2.5-flash
+        - gpt-4.1-mini
+
+    # ── Review primary (Gemini 3.1 Pro — Google AI Pro quota)
+    - gemini-3.1-pro:
+        - gemini-2.5-pro
+        - kimi-k2.5
+        - o4-mini
+        - claude-sonnet-4-6
+
+    # ── DeepSeek V4 (orchestration, planning, refactor, data/infra)
+    - deepseek-v4:
+        - gemini-3-flash
+        - qwen3-30b-a3b
+        - gpt-4.1-mini
+        - kimi-k2.5
+
+    # ── DeepSeek R1 (primary reasoning model)
+    - deepseek-r1:
+        - o4-mini
+        - kimi-k2.5
+        - o3
+
+    # ── o4-mini (reasoning fallback after R1)
+    - o4-mini:
+        - deepseek-r1
+        - kimi-k2.5
+        - o3
+
+    # ── Kimi K2.5 (docs/summarization primary — 256K context)
+    - kimi-k2.5:
+        - kimi-k2.6
+        - gemini-3.1-pro
+        - gemini-2.5-pro
+
+    # ── Kimi K2.6 (speed-sensitive fallback — 4× faster than K2.5)
+    - kimi-k2.6:
+        - kimi-k2.5
+        - gemini-2.5-pro
+
+    # ── OpenAI nano/mini fallbacks
+    - gpt-4.1-nano:
+        - glm-4.7-flash
+        - qwen3-30b-a3b
+        - gpt-4.1-mini
+    - gpt-4.1-mini:
+        - deepseek-v4
+        - gemini-2.5-flash
+        - gpt-5.4-mini
+
+    # ── Qwen fallbacks
+    - qwen3-30b-a3b:
+        - deepseek-v4
+        - glm-4.7
+        - gpt-4.1-nano
+    - qwen2.5-coder-32b:
+        - qwen3-30b-a3b
+        - deepseek-v4
+        - gpt-4.1-mini
+
+    # ── GLM paid fallbacks
+    - glm-4.7:
+        - deepseek-v4
+        - qwen3-30b-a3b
+        - gpt-4.1-nano
+    - glm-5:
+        - glm-4.7
+        - deepseek-v4
+        - o4-mini
+
+    # ── Premium fallbacks
+    - o3:
+        - gpt-5.4
+        - claude-sonnet-4-6
+    - gpt-5.4:
+        - o3
+        - claude-sonnet
+
+    # ── Vertex Claude fallback
+    - claude-sonnet-4-6:
+        - claude-haiku
+        - claude-sonnet
+
+    # ── Google paid API fallbacks (after quota exhausted)
+    - gemini-2.5-flash:
+        - deepseek-v4
+        - gpt-4.1-mini
+    - gemini-2.5-pro:
+        - deepseek-v4
+        - o4-mini
+
+  # ── Context Window Fallbacks ─────────────────────────────────────
+  # Docs: https://docs.litellm.ai/docs/proxy/reliability#context-window-fallbacks
+  # Triggered specifically on ContextWindowExceededError — routes to a model
+  # with a larger context window, not just any fallback.
+  context_window_fallbacks:
+    - gpt-4.1-nano:
+        - gpt-4.1-mini # nano: ~32K → mini: 1M context
+        - gpt-4.1 # 1M context
+    - gpt-4.1-mini:
+        - gpt-4.1 # 1M context
+        - kimi-k2.5 # 256K context
+    - deepseek-v4:
+        - kimi-k2.5 # 256K context
+        - gemini-3.1-pro # 1M context
+    - gemini-3-flash:
+        - kimi-k2.5 # 256K context
+        - gemini-3.1-pro # 1M context
+    - glm-4.7:
+        - kimi-k2.5 # 256K context
+
+# ═════════════════════════════════════════════════════════════════════
+# LITELLM SETTINGS
+# Docs: https://docs.litellm.ai/docs/proxy/config_settings#litellm_settings---reference
+# ═════════════════════════════════════════════════════════════════════
+
+litellm_settings:
+  # ── Caching ────────────────────────────────────────────────────────
+  # Docs: https://docs.litellm.ai/docs/proxy/caching
+  # Note: DeepSeek and Kimi have AUTOMATIC server-side prompt caching (90% and 75%
+  # discount respectively) — this is separate from LiteLLM's local response cache.
+  # LiteLLM cache here deduplicates IDENTICAL requests at the proxy level.
+  cache: true
+  cache_params:
+    type: local # Use "redis" for multi-machine setups
+    # To enable Redis:
+    # type: redis
+    # host: os.environ/REDIS_HOST
+    # port: os.environ/REDIS_PORT
+    # password: os.environ/REDIS_PASSWORD
+    supported_call_types: # Async call types only — per LiteLLM docs
+      - acompletion # /chat/completions
+      - atext_completion # /completions
+    ttl: 3600 # Cache TTL: 1 hour
+
+  # ── Reliability ────────────────────────────────────────────────────
+  request_timeout: 120 # 2 min — reasoning models (R1, o3) can be slow
+  drop_params:
+    true # Silently drop unsupported params per provider
+    # (e.g., temperature on o-series models)
+
+  # ── Default Fallbacks ──────────────────────────────────────────────
+  # Used when no specific fallback chain matches the requested model.
+  default_fallbacks:
+    - deepseek-v4
+    - gpt-4.1-mini
+
+# ═════════════════════════════════════════════════════════════════════
+# GENERAL SETTINGS
+# Docs: https://docs.litellm.ai/docs/proxy/config_settings#general_settings---reference
+# ═════════════════════════════════════════════════════════════════════
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  ui_access_mode: admin_only
+
+  # ── Optional: PostgreSQL for spend logs and usage tracking ─────────
+  # Uncomment to enable persistent spend tracking across restarts.
+  # Without this, provider budgets reset on every proxy restart.
+  database_url: os.environ/DATABASE_URL
+
+  # ── Health Checks ──────────────────────────────────────────────────
+  # Lightweight background pings to detect model outages before user hits them.
+  background_health_checks: true
+  health_check_interval: 300 # Every 5 minutes
+
+  GOOGLE_CLIENT_ID: os.environ/GOOGLE_CLIENT_ID
+  GOOGLE_CLIENT_SECRET: os.environ/GOOGLE_CLIENT_SECRET
+
+  PROXY_LOGOUT_URL: os.environ/PROXY_LOGOUT_URL
+  PROXY_BASE_URL: os.environ/PROXY_BASE_URL
+
+  # ── Virtual Keys (configure in LiteLLM UI at localhost:4000/ui) ────
+  # Recommended setup:
+  #
+  #   sk-premium:
+  #     budget: $3/day
+  #     models: [o3, gpt-5.4, gpt-4.1, claude-sonnet, claude-opus, gemini-3.1-pro]
+  #
+  #   sk-standard:
+  #     budget: $1/day
+  #     models: [deepseek-v4, deepseek-r1, kimi-k2.5, gemini-3-flash, gemini-3.1-pro,
+  #              gpt-4.1-mini, o4-mini, qwen3-30b-a3b, qwen2.5-coder-32b, glm-4.7]
+  #
+  #   sk-free:
+  #     budget: $0.10/day
+  #     models: [glm-4.7-flash, glm-4.5-flash, gpt-4.1-nano, qwen3-30b-a3b]
