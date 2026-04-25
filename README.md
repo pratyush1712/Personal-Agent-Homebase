@@ -31,19 +31,20 @@ flowchart TD
 
 ## Files
 
-| Path                                 | Purpose                                                     |
-| ------------------------------------ | ----------------------------------------------------------- |
-| `docker-compose.yml`                 | Shared LiteLLM, Mem0, and Qdrant service graph              |
-| `docker-compose.local.yml`           | Local PostgreSQL for LiteLLM and loopback port bindings     |
-| `docker-compose.prod.yml`            | Production Caddy bindings and LiteLLM Neon settings         |
-| `Caddyfile`                          | HTTPS reverse proxy and status endpoint                     |
-| `litellm.config.yaml`                | Cost-first model routing and LiteLLM settings               |
-| `oh-my-openagent.jsonc`              | Source Oh-My-OpenAgent agent definitions                    |
-| `scripts/render-openagent-config.sh` | Generates local or remote OpenAgent configs                 |
-| `scripts/with-env.sh`                | Loads `.env.local` or `.env.prod` for Makefile helpers      |
-| `scripts/health-check.sh`            | Local/prod doctor checks                                    |
-| `docs/adr/`                          | Architecture decisions                                      |
-| `docs/superpowers/specs/`            | Design spec for this stack                                  |
+| Path                                 | Purpose                                                 |
+| ------------------------------------ | ------------------------------------------------------- |
+| `docker-compose.yml`                 | Shared LiteLLM, Mem0, and Qdrant service graph          |
+| `docker-compose.local.yml`           | Local PostgreSQL for LiteLLM and loopback port bindings |
+| `docker-compose.prod.yml`            | Production Caddy bindings and LiteLLM Neon settings     |
+| `mem0/Dockerfile`                    | amd64-safe Mem0 API image build from Python source path |
+| `Caddyfile`                          | HTTPS reverse proxy and status endpoint                 |
+| `litellm.config.yaml`                | Cost-first model routing and LiteLLM settings           |
+| `oh-my-openagent.jsonc`              | Source Oh-My-OpenAgent agent definitions                |
+| `scripts/render-openagent-config.sh` | Generates local or remote OpenAgent configs             |
+| `scripts/with-env.sh`                | Loads `.env.local` or `.env.prod` for Makefile helpers  |
+| `scripts/health-check.sh`            | Local/prod doctor checks                                |
+| `docs/adr/`                          | Architecture decisions                                  |
+| `docs/superpowers/specs/`            | Design spec for this stack                              |
 
 ## Quick Start
 
@@ -88,6 +89,8 @@ make agent-config-remote
 
 `make install-prod` creates `.env.prod` from `.env.prod.example`.
 
+`make prod` now runs Compose with `--build`, so Mem0 is rebuilt from `mem0/Dockerfile` on the VPS instead of depending on `mem0/mem0-api-server:latest`.
+
 Production expects `DATABASE_URL` in `.env.prod` to point at your Neon connection string for LiteLLM. Mem0 stores vectors in Qdrant and its lightweight API history in the `mem0_data` Docker volume, so it does not require Neon-specific Postgres settings.
 
 Public production endpoints:
@@ -101,20 +104,20 @@ Public production endpoints:
 
 ## Daily Commands
 
-| Command                              | Description                                  |
-| ------------------------------------ | -------------------------------------------- |
+| Command                                    | Description                                          |
+| ------------------------------------------ | ---------------------------------------------------- |
 | `make install-local` / `make install-prod` | Create `.env.local` or `.env.prod` from the examples |
-| `make dev`                           | Start local stack                            |
-| `make prod`                          | Start/update production VPS stack            |
-| `make doctor`                        | Check local stack health                     |
-| `make doctor-prod`                   | Check production stack health                |
-| `make status` / `make status-prod`   | Show service status                          |
-| `make logs` / `make logs-prod`       | Tail logs                                    |
-| `make backup` / `make backup-prod`   | Dump local Postgres or Neon to `backups/`    |
-| `make restore` / `make restore-prod` | Restore latest SQL backup locally or to Neon |
-| `make config-check`                  | Validate compose files and scripts           |
-| `make agent-config-local`            | Render local OpenAgent config                |
-| `make agent-config-remote`           | Render remote OpenAgent config               |
+| `make dev`                                 | Start local stack                                    |
+| `make prod`                                | Start/update production VPS stack                    |
+| `make doctor`                              | Check local stack health                             |
+| `make doctor-prod`                         | Check production stack health                        |
+| `make status` / `make status-prod`         | Show service status                                  |
+| `make logs` / `make logs-prod`             | Tail logs                                            |
+| `make backup` / `make backup-prod`         | Dump local Postgres or Neon to `backups/`            |
+| `make restore` / `make restore-prod`       | Restore latest SQL backup locally or to Neon         |
+| `make config-check`                        | Validate compose files and scripts                   |
+| `make agent-config-local`                  | Render local OpenAgent config                        |
+| `make agent-config-remote`                 | Render remote OpenAgent config                       |
 
 ## URL Rules
 
@@ -142,6 +145,7 @@ Model cost control lives in `litellm.config.yaml`:
 - Qdrant is not public.
 - Public traffic enters through Caddy on ports 80/443.
 - The custom LiteLLM Dockerfile was removed; production uses the official image and runtime-mounted config.
+- Mem0 is built from `python:3.12-slim` plus pinned Python dependencies to avoid upstream image manifest gaps on `linux/amd64`.
 
 ## Verification
 

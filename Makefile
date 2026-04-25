@@ -83,7 +83,7 @@ dev: require-local-env config-check-local
 prod: require-prod-env preflight-prod config-check-prod
 	@echo "Starting production OpenAgent stack..."
 	@$(COMPOSE_PROD) pull
-	@$(COMPOSE_PROD) up -d --remove-orphans --force-recreate
+	@$(COMPOSE_PROD) up -d --build --remove-orphans --force-recreate
 	@$(MAKE) doctor-prod
 	@$(WITH_PROD_ENV) bash -lc 'echo "LiteLLM UI:  $${PROXY_LOGOUT_URL:-$${LITELLM_BASE_URL%/}/ui}"; echo "Mem0 API:    $${MEM0_BASE_URL:-https://mem0.$${DOMAIN:-$(DOMAIN)}}"; echo "Status:      https://status.$${DOMAIN:-$(DOMAIN)}/health"'
 

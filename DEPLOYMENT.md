@@ -120,6 +120,7 @@ make doctor-prod
 ```
 
 `make prod` now force-recreates containers while preserving Docker named volumes, so service config/image updates are applied reliably without wiping state.
+It also rebuilds the local `mem0` image from `mem0/Dockerfile` (Python slim + pip dependencies), which avoids reliance on `mem0/mem0-api-server:latest` manifests.
 
 ## 8) Verify Public Endpoints
 
@@ -152,7 +153,7 @@ Required repository secrets:
 - Neon remains the production database; deploys do not run destructive schema resets.
 - Qdrant and Mem0 local state are on named Docker volumes (`qdrant_data`, `mem0_data`).
 - CI/CD does not run `docker compose down -v` or `docker volume prune`.
-- `make prod` uses `up -d --force-recreate` and keeps named volumes intact.
+- `make prod` uses `up -d --build --force-recreate` and keeps named volumes intact.
 
 ## Rollback
 
