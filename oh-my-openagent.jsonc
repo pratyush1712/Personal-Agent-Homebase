@@ -51,7 +51,7 @@
     // -----------------------------------------------------------------------
 
     "proxy": "Route ALL providers through LiteLLM. Use scripts/render-openagent-config.sh to generate local or remote configs without editing every model URL by hand.",
-    "litellm_config": "~/.litellm/config.yaml",
+    "litellm_config": "../litellm.config.yaml",
   },
 
   // =========================================================================
