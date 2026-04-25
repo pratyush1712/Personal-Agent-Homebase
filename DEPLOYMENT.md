@@ -133,23 +133,23 @@ curl -fsS https://mem0.pratyushsudhakar.com/healthz
 
 Then open these in your browser:
 
-| URL | What you'll see |
-|-----|----------------|
-| `https://litellm.pratyushsudhakar.com/ui` | LiteLLM dashboard (models, keys, spend) |
-| `https://mem0.pratyushsudhakar.com/docs` | Mem0 Swagger UI |
-| `https://status.pratyushsudhakar.com` | **Uptime Kuma** — create your admin account on first visit, then add monitors (see below) |
-| `https://grafana.pratyushsudhakar.com` | **Grafana** — log in with username `admin` and `GRAFANA_ADMIN_PASSWORD`; Loki is pre-configured |
+| URL                                       | What you'll see                                                                                 |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `https://litellm.pratyushsudhakar.com/ui` | LiteLLM dashboard (models, keys, spend)                                                         |
+| `https://mem0.pratyushsudhakar.com/docs`  | Mem0 Swagger UI                                                                                 |
+| `https://status.pratyushsudhakar.com`     | **Uptime Kuma** — create your admin account on first visit, then add monitors (see below)       |
+| `https://grafana.pratyushsudhakar.com`    | **Grafana** — log in with username `admin` and `GRAFANA_ADMIN_PASSWORD`; Loki is pre-configured |
 
 ### First-Launch: Uptime Kuma Monitors
 
 After creating your admin account at `status.pratyushsudhakar.com`, add these monitors:
 
-| Name | Type | URL / Host | Port |
-|------|------|-----------|------|
-| LiteLLM | HTTP | `https://litellm.pratyushsudhakar.com/health/liveliness` | — |
-| Mem0 | HTTP | `https://mem0.pratyushsudhakar.com/healthz` | — |
-| Qdrant | TCP | `qdrant` | `6333` |
-| Grafana | HTTP | `https://grafana.pratyushsudhakar.com/api/health` | — |
+| Name    | Type | URL / Host                                               | Port   |
+| ------- | ---- | -------------------------------------------------------- | ------ |
+| LiteLLM | HTTP | `https://litellm.pratyushsudhakar.com/health/liveliness` | —      |
+| Mem0    | HTTP | `https://mem0.pratyushsudhakar.com/healthz`              | —      |
+| Qdrant  | TCP  | `qdrant`                                                 | `6333` |
+| Grafana | HTTP | `https://grafana.pratyushsudhakar.com/api/health`        | —      |
 
 For email notifications: Settings → Notifications → Add → Email (SMTP).
 

@@ -18,7 +18,10 @@ services:
       - "--port"
       - "4000"
       - "--num_workers"
-      - "${LITELLM_WORKERS:-4}"
+      - "$(nproc)"
+      - "--run_gunicorn"
+      - "--max_requests_before_restart"
+      - "10000"
     volumes:
       - ./litellm.config.yaml:/app/config.yaml:ro
     environment:

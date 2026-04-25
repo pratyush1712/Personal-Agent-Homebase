@@ -17,7 +17,8 @@ jobs:
     name: Roll Back to ${{ inputs.commit_sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: production
+    env:
+      environment: production
     steps:
       - name: Checkout current code
         uses: actions/checkout@v4

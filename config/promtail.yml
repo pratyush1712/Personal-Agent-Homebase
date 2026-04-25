@@ -32,11 +32,13 @@ scrape_configs:
         target_label: "container"
 
       # Compose service name (set by docker compose)
-      - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
+      - source_labels:
+          ["__meta_docker_container_label_com_docker_compose_service"]
         target_label: "service"
 
       # Compose project name
-      - source_labels: ["__meta_docker_container_label_com_docker_compose_project"]
+      - source_labels:
+          ["__meta_docker_container_label_com_docker_compose_project"]
         target_label: "project"
 
       # stdout vs stderr
