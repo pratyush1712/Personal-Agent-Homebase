@@ -104,16 +104,47 @@ mem0.pratyushsudhakar.com {
 	}
 }
 
-# ── Status / Health Endpoint ───────────────────────────────────────────────
+# ── Status / Health Endpoint → Uptime Kuma ────────────────────────────────
+# Password-protected uptime dashboard at status.pratyushsudhakar.com.
+# Visit on first launch to create your admin account and add monitors.
 status.pratyushsudhakar.com {
-	respond /health 200 {
-		body "{\"status\":\"ok\",\"services\":{\"litellm\":\"up\",\"mem0\":\"up\",\"proxy\":\"up\"}}"
-		close
+	reverse_proxy uptime-kuma:3001 {
+		header_up Host {host}
+		header_up X-Real-IP {remote}
 	}
 
 	header {
-		Content-Type "application/json"
 		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+	}
+
+	log {
+		output file /data/access-status.log {
+			roll_size 10MB
+			roll_keep 5
+		}
+		format json
+	}
+}
+
+# ── Grafana (Centralized Log Viewer) ──────────────────────────────────────
+# Log browsing via Loki at grafana.pratyushsudhakar.com.
+# Default datasource (Loki) is provisioned automatically on first start.
+grafana.pratyushsudhakar.com {
+	reverse_proxy grafana:3000 {
+		header_up Host {host}
+		header_up X-Real-IP {remote}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+	}
+
+	log {
+		output file /data/access-grafana.log {
+			roll_size 10MB
+			roll_keep 5
+		}
+		format json
 	}
 }
 

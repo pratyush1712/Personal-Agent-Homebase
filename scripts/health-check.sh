@@ -43,7 +43,7 @@ case "$STACK_PROFILE" in
         compose_project="openagent-prod"
         check_caddy=true
         database_mode="neon"
-        services=(caddy litellm mem0 qdrant)
+        services=(caddy litellm mem0 qdrant uptime-kuma loki promtail grafana)
         ;;
     *)
         echo "STACK_PROFILE must be local or prod" >&2
@@ -220,6 +220,8 @@ main() {
     echo "--- HTTP Endpoints ---"
     if [ "$check_caddy" = "true" ]; then
         health_check "Caddy" "$CADDY_URL/health" || exit_code=1
+        health_check "Uptime Kuma" "http://localhost:3001" || exit_code=1
+        health_check "Grafana" "http://localhost:3000/api/health" || exit_code=1
     fi
     health_check "LiteLLM Liveliness" "$LITELLM_URL/health/liveliness" || exit_code=1
     health_check "LiteLLM Readiness" "$LITELLM_URL/health/readiness" || exit_code=1

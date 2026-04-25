@@ -30,6 +30,12 @@ jobs:
           bash -n scripts/render-openagent-config.sh
           scripts/render-openagent-config.sh --help > /dev/null
 
+      - name: ShellCheck scripts
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: ./scripts
+          severity: warning
+
       - name: Validate Caddyfile
         run: |
           docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
@@ -111,6 +117,22 @@ jobs:
             docker image prune -af --filter "until=168h"
 
             echo "Deployment complete!"
+
+      - name: Smoke test public endpoints
+        run: |
+          echo "Waiting 20s for Caddy HTTPS negotiation and container startup..."
+          sleep 20
+          echo "Testing LiteLLM..."
+          curl -fsS --retry 6 --retry-delay 5 --retry-connrefused \
+            https://litellm.pratyushsudhakar.com/health/liveliness
+          echo "Testing Mem0..."
+          curl -fsS --retry 6 --retry-delay 5 --retry-connrefused \
+            https://mem0.pratyushsudhakar.com/healthz
+          echo "Testing status page (Uptime Kuma)..."
+          curl -fsS --retry 6 --retry-delay 5 --retry-connrefused \
+            --output /dev/null \
+            https://status.pratyushsudhakar.com
+          echo "All smoke tests passed."
 
       - name: Notify on failure
         if: failure()

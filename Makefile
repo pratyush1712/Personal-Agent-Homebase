@@ -15,20 +15,44 @@ COMPOSE_PROD := $(COMPOSE_BASE) --env-file "$(PROD_ENV_FILE)" -f docker-compose.
 WITH_LOCAL_ENV := ./scripts/with-env.sh "$(LOCAL_ENV_FILE)"
 WITH_PROD_ENV := ./scripts/with-env.sh "$(PROD_ENV_FILE)"
 
-.PHONY: help install install-local install-prod require-local-env require-prod-env preflight-prod bootstrap-lightsail dev prod deploy status status-prod logs logs-prod stop stop-prod restart restart-prod backup backup-prod restore restore-prod clean clean-prod doctor doctor-prod test config-check config-check-local config-check-prod scripts-check agent-config-local agent-config-remote update update-prod
+.PHONY: help install install-local install-prod require-local-env require-prod-env preflight-prod bootstrap-lightsail dev prod deploy status status-prod logs logs-prod logs-litellm-prod logs-mem0-prod logs-qdrant-prod logs-caddy-prod logs-grafana-prod logs-uptime-prod stop stop-prod restart restart-prod backup backup-prod restore restore-prod clean clean-prod doctor doctor-prod test config-check config-check-local config-check-prod scripts-check agent-config-local agent-config-remote update update-prod rollback-prod qdrant-health-prod qdrant-collections-prod qdrant-info-prod qdrant-tunnel-prod
 
 help:
 	@echo "OpenAgent Stack — Hybrid Commands"
+	@echo ""
+	@echo "  --- Setup ---"
 	@echo "  make install-local        Create .env.local from .env.local.example"
 	@echo "  make install-prod         Create .env.prod from .env.prod.example"
 	@echo "  make bootstrap-lightsail  Install Docker + firewall on Lightsail"
+	@echo ""
+	@echo "  --- Deploy ---"
 	@echo "  make preflight-prod       Validate host before production deploy"
 	@echo "  make dev                  Start the local development stack"
 	@echo "  make prod                 Start/update the production VPS stack"
+	@echo "  make rollback-prod COMMIT=<sha>  Roll back production to a specific git commit"
+	@echo ""
+	@echo "  --- Health / Monitoring ---"
 	@echo "  make doctor               Check local containers and endpoints"
 	@echo "  make doctor-prod          Check production containers and endpoints"
+	@echo ""
+	@echo "  --- Logs ---"
+	@echo "  make logs-prod            Tail all production containers"
+	@echo "  make logs-litellm-prod    Tail LiteLLM only"
+	@echo "  make logs-mem0-prod       Tail Mem0 only"
+	@echo "  make logs-qdrant-prod     Tail Qdrant only"
+	@echo "  make logs-caddy-prod      Tail Caddy only"
+	@echo "  make logs-grafana-prod    Tail Grafana only"
+	@echo "  make logs-uptime-prod     Tail Uptime Kuma only"
+	@echo ""
+	@echo "  --- Qdrant ---"
+	@echo "  make qdrant-health-prod       Quick healthz check (run from server or Mac)"
+	@echo "  make qdrant-collections-prod  List collections + vector counts"
+	@echo "  make qdrant-info-prod         Full cluster info JSON"
+	@echo "  make qdrant-tunnel-prod SSH_HOST=<ip>  SSH tunnel → http://localhost:6333/dashboard"
+	@echo ""
+	@echo "  --- Operations ---"
 	@echo "  make status|logs|stop     Operate on the local stack"
-	@echo "  make status-prod|logs-prod|stop-prod"
+	@echo "  make status-prod|stop-prod"
 	@echo "  make backup|restore       Backup or restore the local PostgreSQL data"
 	@echo "  make backup-prod|restore-prod"
 	@echo "  make config-check         Validate compose files and shell scripts"
@@ -100,6 +124,24 @@ logs: require-local-env
 
 logs-prod: require-prod-env
 	@$(COMPOSE_PROD) logs -f --tail=100
+
+logs-litellm-prod: require-prod-env
+	@$(COMPOSE_PROD) logs -f --tail=200 litellm
+
+logs-mem0-prod: require-prod-env
+	@$(COMPOSE_PROD) logs -f --tail=200 mem0
+
+logs-qdrant-prod: require-prod-env
+	@$(COMPOSE_PROD) logs -f --tail=200 qdrant
+
+logs-caddy-prod: require-prod-env
+	@$(COMPOSE_PROD) logs -f --tail=200 caddy
+
+logs-grafana-prod: require-prod-env
+	@$(COMPOSE_PROD) logs -f --tail=200 grafana
+
+logs-uptime-prod: require-prod-env
+	@$(COMPOSE_PROD) logs -f --tail=200 uptime-kuma
 
 stop: require-local-env
 	@$(COMPOSE_LOCAL) down
@@ -197,6 +239,58 @@ agent-config-local: require-local-env
 agent-config-remote: require-prod-env
 	@mkdir -p .generated
 	@$(WITH_PROD_ENV) bash -lc './scripts/render-openagent-config.sh --mode remote --base-url "$${LITELLM_BASE_URL%/}/v1" --domain "$${DOMAIN:-$(DOMAIN)}" --key "$${LITELLM_MASTER_KEY:-sk-litellm-master}" --output .generated/oh-my-openagent.remote.jsonc'
+
+# ── Rollback ────────────────────────────────────────────────────────────────
+# Usage: make rollback-prod COMMIT=<git-sha>
+# Checks out the specified commit and re-deploys the production stack.
+rollback-prod: require-prod-env
+	@if [ -z "$(COMMIT)" ]; then \
+		echo "Usage: make rollback-prod COMMIT=<git-sha>"; \
+		exit 1; \
+	fi
+	@echo "Rolling back production to $(COMMIT)..."
+	git fetch origin
+	git checkout "$(COMMIT)"
+	$(MAKE) prod
+	$(MAKE) doctor-prod
+	@echo "Rollback to $(COMMIT) complete."
+
+# ── Qdrant Developer Access ─────────────────────────────────────────────────
+# These targets work both from the Lightsail server terminal and from your Mac
+# (except qdrant-tunnel-prod which requires network access to the server).
+
+SSH_HOST ?=
+SSH_USER ?= ubuntu
+
+qdrant-health-prod: require-prod-env
+	@$(COMPOSE_PROD) exec qdrant wget -qO- http://localhost:6333/healthz
+
+qdrant-collections-prod: require-prod-env
+	@$(COMPOSE_PROD) exec qdrant wget -qO- http://localhost:6333/collections
+
+qdrant-info-prod: require-prod-env
+	@$(COMPOSE_PROD) exec qdrant wget -qO- http://localhost:6333/cluster
+
+# Opens an SSH tunnel from your Mac to the Qdrant container.
+# Then visit http://localhost:6333/dashboard in Chrome.
+# Press Ctrl-C to close the tunnel.
+# Usage: make qdrant-tunnel-prod SSH_HOST=<lightsail-static-ip>
+qdrant-tunnel-prod:
+	@if [ -z "$(SSH_HOST)" ]; then \
+		echo "Usage: make qdrant-tunnel-prod SSH_HOST=<lightsail-static-ip> [SSH_USER=ubuntu]"; \
+		exit 1; \
+	fi
+	@echo "Finding Qdrant container IP on $(SSH_HOST)..."
+	$(eval QDRANT_IP := $(shell ssh "$(SSH_USER)@$(SSH_HOST)" \
+		"docker inspect \$$(docker compose -p openagent-prod ps -q qdrant 2>/dev/null | head -1) \
+		--format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null"))
+	@if [ -z "$(QDRANT_IP)" ]; then \
+		echo "Could not find Qdrant container IP. Is the production stack running?"; \
+		exit 1; \
+	fi
+	@echo "Tunnel open: http://localhost:6333/dashboard"
+	@echo "Press Ctrl-C to close."
+	@ssh -N -L "6333:$(QDRANT_IP):6333" "$(SSH_USER)@$(SSH_HOST)"
 
 update: dev
 

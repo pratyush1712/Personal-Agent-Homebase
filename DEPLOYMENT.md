@@ -11,9 +11,10 @@ This guide prepares and deploys the existing stack on AWS Lightsail with no arch
 - Qdrant: private Docker network only.
 - Postgres: Neon in production.
 - Public domains:
-  - `litellm.pratyushsudhakar.com`
-  - `mem0.pratyushsudhakar.com`
-  - `status.pratyushsudhakar.com`
+  - `litellm.pratyushsudhakar.com` — LiteLLM proxy + UI
+  - `mem0.pratyushsudhakar.com` — Mem0 REST API + Swagger docs
+  - `status.pratyushsudhakar.com` — Uptime Kuma dashboard (password-protected)
+  - `grafana.pratyushsudhakar.com` — Grafana log viewer (password-protected, Loki backend)
 
 ## 1) Create Lightsail Instance
 
@@ -59,6 +60,7 @@ Create these A records at your DNS provider, all pointing to the Lightsail stati
 | `litellm.pratyushsudhakar.com` | A    | `<static-ip>` |
 | `mem0.pratyushsudhakar.com`    | A    | `<static-ip>` |
 | `status.pratyushsudhakar.com`  | A    | `<static-ip>` |
+| `grafana.pratyushsudhakar.com` | A    | `<static-ip>` |
 
 ## 5) Install Docker and Clone Repo
 
@@ -103,10 +105,10 @@ make install-prod
 Edit `.env.prod` with production values (from `.env.prod.example` keys):
 
 - Set `DATABASE_URL` to Neon production connection string.
+- Set `GRAFANA_ADMIN_PASSWORD` to a strong password for `grafana.pratyushsudhakar.com`.
 - Keep domain/base URL values aligned to:
   - `https://litellm.pratyushsudhakar.com`
   - `https://mem0.pratyushsudhakar.com`
-  - `https://status.pratyushsudhakar.com`
 
 Never commit `.env.prod`.
 
@@ -127,7 +129,43 @@ It also rebuilds the local `mem0` image from `mem0/Dockerfile` (Python slim + pi
 ```bash
 curl -fsS https://litellm.pratyushsudhakar.com/health/liveliness
 curl -fsS https://mem0.pratyushsudhakar.com/healthz
-curl -fsS https://status.pratyushsudhakar.com/health
+```
+
+Then open these in your browser:
+
+| URL | What you'll see |
+|-----|----------------|
+| `https://litellm.pratyushsudhakar.com/ui` | LiteLLM dashboard (models, keys, spend) |
+| `https://mem0.pratyushsudhakar.com/docs` | Mem0 Swagger UI |
+| `https://status.pratyushsudhakar.com` | **Uptime Kuma** — create your admin account on first visit, then add monitors (see below) |
+| `https://grafana.pratyushsudhakar.com` | **Grafana** — log in with username `admin` and `GRAFANA_ADMIN_PASSWORD`; Loki is pre-configured |
+
+### First-Launch: Uptime Kuma Monitors
+
+After creating your admin account at `status.pratyushsudhakar.com`, add these monitors:
+
+| Name | Type | URL / Host | Port |
+|------|------|-----------|------|
+| LiteLLM | HTTP | `https://litellm.pratyushsudhakar.com/health/liveliness` | — |
+| Mem0 | HTTP | `https://mem0.pratyushsudhakar.com/healthz` | — |
+| Qdrant | TCP | `qdrant` | `6333` |
+| Grafana | HTTP | `https://grafana.pratyushsudhakar.com/api/health` | — |
+
+For email notifications: Settings → Notifications → Add → Email (SMTP).
+
+### Qdrant Dashboard (SSH Tunnel from your Mac)
+
+```bash
+# Replace <lightsail-ip> with your static IP
+make qdrant-tunnel-prod SSH_HOST=<lightsail-ip>
+# Then open http://localhost:6333/dashboard in Chrome
+```
+
+From the Lightsail browser SSH terminal:
+
+```bash
+make qdrant-health-prod
+make qdrant-collections-prod
 ```
 
 ## 9) GitHub Actions CD (master pushes)
@@ -157,12 +195,14 @@ Required repository secrets:
 
 ## Rollback
 
+**Option A — GitHub Actions (recommended):**
+Go to your repository → Actions → "Rollback Production" → Run workflow → enter the commit SHA.
+
+**Option B — Direct server command:**
+
 ```bash
 cd ~/openagent-stack
-git fetch --prune origin
-git checkout <previous-good-commit>
-make prod
-make doctor-prod
+make rollback-prod COMMIT=<previous-good-commit>
 ```
 
 Use Neon restore points for database rollback when needed.
@@ -171,10 +211,16 @@ Use Neon restore points for database rollback when needed.
 
 ```bash
 cd ~/openagent-stack
-make status-prod
-make logs-prod
-make doctor-prod
-make backup-prod
+make status-prod              # container states
+make logs-prod                # all containers
+make logs-litellm-prod        # LiteLLM only
+make logs-mem0-prod           # Mem0 only
+make logs-qdrant-prod         # Qdrant only
+make logs-caddy-prod          # Caddy only
+make logs-grafana-prod        # Grafana only
+make logs-uptime-prod         # Uptime Kuma only
+make doctor-prod              # full health check
+make backup-prod              # Neon snapshot
 ```
 
 ## Troubleshooting

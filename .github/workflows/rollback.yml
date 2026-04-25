@@ -1,0 +1,80 @@
+name: Rollback Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Git commit SHA to roll back to (full or short SHA)"
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: Roll Back to ${{ inputs.commit_sha }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Checkout current code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate commit SHA exists
+        run: |
+          if ! git cat-file -e "${{ inputs.commit_sha }}^{commit}" 2>/dev/null; then
+            echo "::error::Commit ${{ inputs.commit_sha }} not found in this repository."
+            exit 1
+          fi
+          echo "Commit ${{ inputs.commit_sha }} verified."
+
+      - name: Roll back via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -euo pipefail
+            cd ~/openagent-stack || exit 1
+
+            TARGET_SHA="${{ inputs.commit_sha }}"
+            echo "Rolling back to ${TARGET_SHA}..."
+
+            git fetch origin
+            git checkout "${TARGET_SHA}"
+
+            echo "Validating config at rollback target..."
+            make preflight-prod
+            make config-check-prod
+
+            echo "Deploying rollback..."
+            make prod
+
+            echo "Verifying health after rollback..."
+            make doctor-prod
+
+            echo "Rollback to ${TARGET_SHA} complete."
+
+      - name: Smoke test after rollback
+        run: |
+          echo "Waiting 20s for services to stabilise..."
+          sleep 20
+          curl -fsS --retry 6 --retry-delay 5 --retry-connrefused \
+            https://litellm.pratyushsudhakar.com/health/liveliness
+          curl -fsS --retry 6 --retry-delay 5 --retry-connrefused \
+            https://mem0.pratyushsudhakar.com/healthz
+          curl -fsS --retry 6 --retry-delay 5 --retry-connrefused \
+            --output /dev/null \
+            https://status.pratyushsudhakar.com
+          echo "Rollback smoke tests passed."
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Rollback to ${{ inputs.commit_sha }} FAILED. Services may be in an inconsistent state. SSH in immediately and check: make doctor-prod && make logs-prod"
