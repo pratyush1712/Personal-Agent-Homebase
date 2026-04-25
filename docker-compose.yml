@@ -18,7 +18,7 @@ services:
       - "--port"
       - "4000"
       - "--num_workers"
-      - "$(nproc)"
+      - "${LITELLM_WORKERS:-4}"
       - "--run_gunicorn"
       - "--max_requests_before_restart"
       - "10000"

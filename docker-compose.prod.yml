@@ -142,7 +142,7 @@ services:
 
   # ── Grafana (log viewer) ────────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana:11
+    image: grafana/grafana:latest
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
