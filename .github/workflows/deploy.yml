@@ -72,7 +72,8 @@ jobs:
     timeout-minutes: 20
     needs: validate
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    environment: production
+    env:
+      environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
