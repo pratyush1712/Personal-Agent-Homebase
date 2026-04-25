@@ -97,8 +97,46 @@ model_list:
       output_cost_per_token: 0.0
 
   # ══════════════════════════════════════════════════════════════════
-  # TIER 2 — ULTRA-CHEAP PAID APIs
+  # TIER 2 — ULTRA-CHEAP PAID APIs & YC Credits for Grok
+  # xAI / GROK (backed by $2,500 YC credits ≈ 5B output tokens)
+  # Enable data sharing at console.x.ai → Settings → +$150/mo free credits
   # ══════════════════════════════════════════════════════════════════
+
+  # grok-4.1-fast: PRIMARY headless workhorse. $0.20/$0.50/M, 2M context.
+  # Replaces deepseek-v4 as the default cheap capable model for most tasks.
+  - model_name: grok-4.1-fast
+    litellm_params:
+      model: openai/grok-4.1-fast
+      api_base: https://api.x.ai/v1
+      api_key: os.environ/XAI_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000002 # $0.20/M
+      output_cost_per_token: 0.0000005 # $0.50/M
+      max_tokens: 2000000 # 2M context
+
+  # grok-3-mini: reasoning model at same output price as grok-4.1-fast.
+  # Better English instruction following than DeepSeek R1.
+  - model_name: grok-3-mini
+    litellm_params:
+      model: openai/grok-3-mini
+      api_base: https://api.x.ai/v1
+      api_key: os.environ/XAI_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000003 # $0.30/M
+      output_cost_per_token: 0.0000005 # $0.50/M
+
+  # grok-4: premium tier, $3/$15/M. Via $2,500 YC Grok credits.
+  # Use for council/heavy preset — NOT routine tasks.
+  - model_name: grok-4
+    litellm_params:
+      model: openai/grok-4
+      api_base: https://api.x.ai/v1
+      api_key: os.environ/XAI_API_KEY
+      max_budget: 5.00 # $5/day model-level hard cap
+      budget_duration: 1d
+    model_info:
+      input_cost_per_token: 0.000003 # $3/M
+      output_cost_per_token: 0.000015 # $15/M
 
   # DeepSeek V4: orchestration, planning, refactor, data/infra.
   # 81% SWE-bench. Automatic 90% cache discount on repeated prefixes.
@@ -293,15 +331,17 @@ model_list:
   #       Vertex AI Claude bills against your GCP project directly.
   # ══════════════════════════════════════════════════════════════════
 
-  - model_name: claude-sonnet-4-6
+  - model_name: claude-sonnet-via-vertex
     litellm_params:
-      model: gemini/claude-sonnet-4-6
-      api_key: os.environ/GOOGLE_AI_STUDIO_API_KEY
+      model: vertex_ai/claude-sonnet-4-6 # ← was: gemini/claude-sonnet-4-6 (WRONG)
+      vertex_project: os.environ/VERTEX_PROJECT_ID
+      vertex_location: us-east5
 
-  - model_name: claude-opus-4-6
+  - model_name: claude-opus-via-vertex
     litellm_params:
-      model: gemini/claude-opus-4-6
-      api_key: os.environ/GOOGLE_AI_STUDIO_API_KEY
+      model: vertex_ai/claude-opus-4-6 # ← was: gemini/claude-opus-4-6 (WRONG)
+      vertex_project: os.environ/VERTEX_PROJECT_ID
+      vertex_location: us-east5
 
   # ══════════════════════════════════════════════════════════════════
   # TIER 8 — ANTHROPIC DIRECT (absolute last resort)
@@ -354,25 +394,25 @@ router_settings:
   # Provider names must match LiteLLM's provider strings exactly.
   provider_budget_config:
     openai:
-      budget_limit: 3.00 # $3/day total across all OpenAI models
+      budget_limit: 10.00 # ← was $3/day; increased with $2,500 YC credits (~250 days)
       time_period: 1d
     anthropic:
-      budget_limit: 1.00 # $1/day — API credits ≠ Claude Pro web sub
+      budget_limit: 2.00 # ← was $1/day; $500 YC credits = ~250 days at $2/day
+      time_period: 1d
+    xai: # ← NEW: $2,500 YC credits ≈ 166 days at $15/day
+      budget_limit: 15.00
       time_period: 1d
     deepseek:
-      budget_limit: 1.00 # $1/day ≈ 3.3M input tokens at V4 pricing
+      budget_limit: 1.00
       time_period: 1d
     moonshot:
-      budget_limit: 0.50 # $0.50/day for Kimi K2.5/K2.6
+      budget_limit: 0.50
       time_period: 1d
     gemini:
-      budget_limit: 0.50 # Paid API fallback only; quota usage is free
+      budget_limit: 0.50
       time_period: 1d
     openrouter:
-      budget_limit: 1.00 # $1/day across all OpenRouter-routed models (Qwen, etc.)
-      time_period: 1d
-    google:
-      budget_limit: 0.50 # $0.50/day for Google models
+      budget_limit: 1.00
       time_period: 1d
     # vertex_ai: billed to GCP project directly — monitor in GCP console
     # zhipu/glm: free tier = no budget needed; paid models (glm-4.7, glm-5) are minimal cost
@@ -405,8 +445,26 @@ router_settings:
         - o4-mini
         - claude-sonnet-4-6
 
-    # ── DeepSeek V4 (orchestration, planning, refactor, data/infra)
+    # grok-4.1-fast fallback chain
+    - grok-4.1-fast:
+        - deepseek-v4
+        - gemini-3-flash
+        - gpt-4.1-mini
+        - glm-4.7
+
+    # grok-3-mini fallback chain (reasoning)
+    - grok-3-mini:
+        - deepseek-r1
+        - o4-mini
+
+    # grok-4 fallback chain (premium)
+    - grok-4:
+        - o3
+        - claude-sonnet
+
+    # Update existing deepseek-v4 chain to include grok as first fallback:
     - deepseek-v4:
+        - grok-4.1-fast # ← NEW: grok is now the first cheap fallback
         - gemini-3-flash
         - qwen3-30b-a3b
         - gpt-4.1-mini
@@ -491,6 +549,14 @@ router_settings:
   # Triggered specifically on ContextWindowExceededError — routes to a model
   # with a larger context window, not just any fallback.
   context_window_fallbacks:
+    - kimi-k2.5:
+        - grok-4.1-fast # 2M context; largest available in the stack
+        - gemini-3.1-pro
+    - deepseek-v4:
+        - grok-4.1-fast # 2M context fallback
+        - kimi-k2.5
+        - gemini-3.1-pro
+
     - gpt-4.1-nano:
         - gpt-4.1-mini # nano: ~32K → mini: 1M context
         - gpt-4.1 # 1M context
@@ -539,6 +605,7 @@ litellm_settings:
   # ── Default Fallbacks ──────────────────────────────────────────────
   # Used when no specific fallback chain matches the requested model.
   default_fallbacks:
+    - grok-4.1-fast
     - deepseek-v4
     - gpt-4.1-mini
 
@@ -566,6 +633,9 @@ general_settings:
 
   PROXY_LOGOUT_URL: os.environ/PROXY_LOGOUT_URL
   PROXY_BASE_URL: os.environ/PROXY_BASE_URL
+
+  callbacks:
+    - langfuse
 
   # ── Virtual Keys (configure in LiteLLM UI at localhost:4000/ui) ────
   # Recommended setup:

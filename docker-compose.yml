@@ -62,7 +62,9 @@ services:
           memory: 512M
 
   mem0:
-    image: mem0/mem0-api-server:latest
+    build:
+      context: ./mem0
+      dockerfile: Dockerfile
     restart: unless-stopped
     volumes:
       - mem0_data:/app/data

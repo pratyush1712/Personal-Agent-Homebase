@@ -3,7 +3,7 @@
   "_meta": {
     "author": "Pratyush Sudhakar",
     "updated": "2026-04-25",
-    "version": "3.0.0",
+    "version": "3.1.0",
 
     // ─── COST HIERARCHY ────────────────────────────────────────────────────────
     //
@@ -20,7 +20,7 @@
     //   gemini-3.1-pro        Within monthly quota
     //
     // TIER 2 — ULTRA-CHEAP PAID
-    //   grok-4.1-fast         $0.20/$0.50/M — cheapest capable frontier, 2M ctx
+    //   grok-4.1-fast         $0.20/$0.50/M — primary headless workhorse, 2M ctx
     //                         Backed by $2,500 YC Grok credits ≈ 5B output tokens
     //                         ALSO: opt in to xAI data sharing → +$150/mo FREE
     //                         (console.x.ai → Settings → Data Sharing)
@@ -30,7 +30,7 @@
     //   glm-4.7               $0.39/$1.75/M paid GLM tier
     //
     // TIER 3 — MID PAID
-    //   grok-3-mini           $0.30/$0.50/M — reasoning model, same output cost as grok-4.1-fast
+    //   grok-3-mini           $0.30/$0.50/M — reasoning model
     //   deepseek-r1           $0.55/$2.19/M — cheapest pure CoT reasoning
     //   kimi-k2.5             $0.60/$2.50/M — 256K ctx, docs/summarization
     //   gpt-4.1-mini          $0.40/$1.60/M
@@ -48,18 +48,16 @@
     //   claude-opus-vertex    Via GCP Vertex AI (billed to GCP, not Anthropic)
     //
     // ─── CURSOR-ACP SETUP ──────────────────────────────────────────────────────
-    // Install the opencode-cursor-oauth plugin (recommended):
+    // Install opencode-cursor-oauth plugin:
     //   npm install -g opencode-cursor-oauth
     //   Add to ~/.config/opencode/opencode.json:
     //     "plugin": ["opencode-cursor-oauth"],
     //     "provider": { "cursor": { "name": "Cursor" } }
     //   Then: opencode auth login --provider cursor
     //
-    // Verify: opencode models | grep cursor-acp
-    //
     // Available cursor-acp models (Cursor Pro Plus):
-    //   cursor-acp/auto                  Cursor's own smart routing (recommended)
-    //   cursor-acp/claude-opus-4-6       Best for architecture, hard reasoning, 1M ctx
+    //   cursor-acp/auto                  Cursor's smart routing (recommended)
+    //   cursor-acp/claude-opus-4-6       Architecture, hard code review, 1M ctx
     //   cursor-acp/claude-sonnet-4-5     Workhorse coding, 77.2% SWE-bench
     //   cursor-acp/gpt-5.1-codex-max     Pure code generation specialist
     //   cursor-acp/gemini-3-pro-preview  Multimodal review, design critique
@@ -74,15 +72,16 @@
     // OpenAI    $2,500 → gpt-4.1-nano/mini (vast budget); o4-mini/o3 when needed
     // Grok xAI  $2,500 → grok-4.1-fast ($0.50/M output) ≈ 5B output tokens
     //                      +$150/mo FREE via data sharing (opt in at console.x.ai)
-    // Anthropic $500   → Claude API credits (NOT Claude Pro web sub, different billing)
-    //                      ~33K output tokens at Sonnet $15/M. Use cursor-acp for Claude.
-    // Cursor    $720   → Already activated as Pro Plus subscription.
-    //                      26% usage at month-end = fine. Resets monthly.
-    // AWS       $10,000 → Host JobOS (EC2 + RDS + ElastiCache + S3 + ALB). Infrastructure only.
-    // Azure     $10,000 → Hold as reserve. Static Web Apps (Playspace dashboard) optional.
+    // Anthropic $500   → Claude API credits (~33K output at Sonnet $15/M)
+    //                      Use cursor-acp for Claude to preserve API credits
+    // Cursor    $720   → Annual Pro Plus purchased for ~$622 (tax included).
+    //                    $97 remaining credits (save for renewal in 12 months).
+    //                    Annual plan: subscription locked for 1 year, usage resets monthly.
+    //                    No monthly billing anxiety — parallelize cursor-acp/* freely.
+    // AWS       $10,000 → Host entire openagent-stack
     //
     "proxy": "localhost:4000 via LiteLLM (for all non-cursor-acp models)",
-    "litellm_config": "~/.litellm/litellm-proxy.yaml",
+    "litellm_config": "./config/litellm/litellm.config.yaml", // ← fixed path
   },
 
   "agents": {
@@ -91,13 +90,14 @@
       "_role": "ORCHESTRATOR — task decomposition, delegation, token budget tracking",
       "model": "cursor-acp/claude-opus-4-6",
       "temperature": 0.3,
-      "maxTokens": 8192,
+      "maxTokens": 16000, // ← was 8192; orchestration output needs room for full graphs
       "system_prompt_append": "\n\n<role>You are the top-level orchestrator. Before delegating, emit: (1) numbered subtask list, (2) estimated token budget per subtask, (3) agent type per step, (4) dependency graph, (5) risk flags. Keep system prompts stable across calls to maximize cache hits on non-Cursor providers.</role>\n\n<skills>Backend: .agents/architecture/backend-architect.md | Mobile: .agents/architecture/react-native-architecture.md | Tooling: .agents/tooling/using-superpowers.md</skills>",
       "fallback_models": [
         "http://localhost:4000/v1||grok-4.1-fast||sk-litellm-master",
         "http://localhost:4000/v1||gemini-3-flash||sk-litellm-master",
         "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
         "http://localhost:4000/v1||gpt-4.1-mini||sk-litellm-master",
+        "http://localhost:4000/v1||glm-4.7-flash||sk-litellm-master", // ← added: free-tier last resort
       ],
     },
 
@@ -106,7 +106,7 @@
       "_role": "PLANNER — architecture design, implementation roadmaps, risk analysis",
       "model": "cursor-acp/claude-sonnet-4-5",
       "temperature": 0.2,
-      "maxTokens": 12000,
+      "maxTokens": 16000, // ← was 12000; standardized
       "system_prompt_append": "\n\n<role>You are the planning specialist. Emit: (1) numbered steps with token-budget estimates, (2) agent type per step, (3) dependency graph, (4) risk/failure-mode flags. Surface ambiguities before proceeding. Prefer explicit over implicit.</role>\n\n<skills>Backend/DB: .agents/architecture/backend-architect.md | Mobile: .agents/architecture/react-native-architecture.md</skills>",
       "fallback_models": [
         "http://localhost:4000/v1||grok-4.1-fast||sk-litellm-master",
@@ -118,7 +118,7 @@
 
     // ── PRIMARY CODER ─────────────────────────────────────────────────────────
     // GPT-5.1 Codex Max via Cursor = code-specialist model at subscription rate.
-    // Falls to Claude Sonnet (also via Cursor), then Grok 4.1 Fast as cheapest
+    // Falls to Claude Sonnet (also Cursor), then grok-4.1-fast as cheapest
     // capable headless fallback ($0.20/$0.50, backed by $2,500 YC credits).
     "atlas": {
       "_role": "CODER — primary implementation, feature development, bug fixes",
@@ -137,15 +137,16 @@
     },
 
     // ── MOBILE CODER (Expo / React Native / Tamagui — Playspace) ─────────────
-    // Claude Opus via Cursor: 1M context holds the entire Playspace RN codebase.
+    // Sonnet 4.5 handles 95%+ of routine RN/Tamagui work.
+    // Opus (1M ctx) fires for full-codebase sessions via fallback — intentional.
     "hephaestus": {
       "_role": "MOBILE CODER — Expo/React Native/Tamagui specialist (Playspace app)",
-      "model": "cursor-acp/claude-opus-4-6",
+      "model": "cursor-acp/claude-sonnet-4-5", // ← was claude-opus-4-6; Sonnet for routine work
       "temperature": 0.15,
       "maxTokens": 16000,
       "system_prompt_append": "\n\n<role>You are the Expo/React Native specialist. Always use Tamagui primitives (XStack/YStack/Text/styled). Prefer useResponsiveLayout and useDesignSystem hooks. Write for phone AND tablet (responsive). Avoid StyleSheet.create. Test component logic mentally against iOS and Android before outputting.</role>\n\n<skills>.agents/sdks/expo.md + .agents/sdks/tamagui.md + .agents/ui-ux/mobile-design.md + .agents/sdks/tanstack.md</skills>",
       "fallback_models": [
-        "cursor-acp/claude-sonnet-4-5",
+        "cursor-acp/claude-opus-4-6", // ← Opus as first fallback; fires for full-codebase scope
         "http://localhost:4000/v1||grok-4.1-fast||sk-litellm-master",
         "http://localhost:4000/v1||deepseek-v4||sk-litellm-master",
         "http://localhost:4000/v1||qwen2.5-coder-32b||sk-litellm-master",
@@ -154,16 +155,16 @@
     },
 
     // ── REVIEWER / AUDITOR ────────────────────────────────────────────────────
-    // Gemini 3 Pro Preview via Cursor: strong multimodal review.
-    // Falls to Gemini 3.1 Pro (Google AI Pro quota), then Grok 4.1 Fast.
+    // Claude Opus 4.6 via Cursor: 1M context holds entire codebase for deep
+    // security/architecture audit. Gemini falls back for multimodal PR reviews.
     "oracle": {
-      "_role": "REVIEWER — code review, security audit, architecture critique, UI/UX audit",
-      "model": "cursor-acp/gemini-3-pro-preview",
+      "_role": "REVIEWER — code review, security audit, architecture critique",
+      "model": "cursor-acp/claude-opus-4-6", // ← was gemini-3-pro-preview; Opus for code depth
       "temperature": 0.1,
       "maxTokens": 8192,
-      "system_prompt_append": "\n\n<role>Rate every finding: CRITICAL / MAJOR / MINOR / NIT. UI: layout correctness, a11y (contrast ratios, 44px tap targets), responsive phone vs tablet. Code: type safety, error handling, performance, security. Never skip CRITICAL items.</role>\n\n<skills>UI: .agents/ui-ux/ui-ux-pro-max.md + .agents/ui-ux/mobile-design.md | Code: .agents/language/typescript.md | Web: .agents/ui-ux/web-design-guidelines.md</skills>",
+      "system_prompt_append": "\n\n<role>Rate every finding: CRITICAL / MAJOR / MINOR / NIT. Code: type safety, error handling, performance, security (injection, auth, data exposure). Architecture: coupling, SOLID violations, scaling failure modes. Never skip CRITICAL items.</role>\n\n<skills>Code: .agents/language/typescript.md | Backend: .agents/architecture/backend-architect.md | DB: .agents/sdks/sqlalchemy.md</skills>",
       "fallback_models": [
-        "http://localhost:4000/v1||gemini-3.1-pro||sk-litellm-master",
+        "http://localhost:4000/v1||gemini-3.1-pro||sk-litellm-master", // multimodal PR fallback
         "http://localhost:4000/v1||grok-4.1-fast||sk-litellm-master",
         "http://localhost:4000/v1||gemini-2.5-pro||sk-litellm-master",
         "http://localhost:4000/v1||kimi-k2.5||sk-litellm-master",
@@ -172,7 +173,7 @@
     },
 
     // ── REFACTOR ──────────────────────────────────────────────────────────────
-    // Safe minimal diffs. Grok 4.1 Fast handles this at $0.20/$0.50.
+    // Grok 4.1 Fast: safe minimal diffs at $0.20/$0.50/M.
     "metis": {
       "_role": "REFACTOR — safe minimal diffs, localized changes, incremental improvements",
       "model": "http://localhost:4000/v1||grok-4.1-fast||sk-litellm-master",
@@ -202,7 +203,7 @@
     },
 
     // ── RESEARCHER ────────────────────────────────────────────────────────────
-    // Grok 4.1 Fast has built-in web/X search — structural advantage for research.
+    // Grok 4.1 Fast: built-in web/X search is a structural research advantage.
     "librarian": {
       "_role": "RESEARCHER — web search, documentation lookup, context gathering",
       "_note": "Grok's built-in web/X search is a unique research advantage",
@@ -238,10 +239,10 @@
       "_note": "Kimi K2.5: 256K context + 75% auto-cache discount",
       "model": "http://localhost:4000/v1||kimi-k2.5||sk-litellm-master",
       "temperature": 0.2,
-      "maxTokens": 32000,
+      "maxTokens": 16000, // ← was 32000; capped to avoid quota exhaustion on long runs
       "fallback_models": [
         "http://localhost:4000/v1||kimi-k2.6||sk-litellm-master",
-        "http://localhost:4000/v1||grok-4.1-fast||sk-litellm-master",
+        "http://localhost:4000/v1||grok-4.1-fast||sk-litellm-master", // 2M ctx good for codebase-scale
         "http://localhost:4000/v1||gemini-3.1-pro||sk-litellm-master",
       ],
     },
@@ -264,13 +265,15 @@
     },
 
     // ── CRITIC ────────────────────────────────────────────────────────────────
+    // GLM-4.7-Flash is FREE — devil's advocate brainstorming needs volume, not cost.
     "momus": {
       "_role": "CRITIC — devil's advocate, challenge assumptions, pre-mortem analysis",
-      "model": "http://localhost:4000/v1||glm-4.7||sk-litellm-master",
+      "model": "http://localhost:4000/v1||glm-4.7-flash||sk-litellm-master", // ← was glm-4.7 (paid); free is fine for critic
       "temperature": 0.7,
       "maxTokens": 4096,
       "system_prompt_append": "\n\n<role>Your job is to find problems. For every proposed design: (1) what breaks at scale, (2) what assumptions could be wrong, (3) second-order effects. Output as numbered challenges.</role>",
       "fallback_models": [
+        "http://localhost:4000/v1||glm-4.7||sk-litellm-master", // paid GLM if flash is rate-limited
         "http://localhost:4000/v1||grok-4.1-fast||sk-litellm-master",
         "http://localhost:4000/v1||gpt-4.1-mini||sk-litellm-master",
       ],
@@ -279,7 +282,7 @@
     // ── QUICK / INTERACTIVE ───────────────────────────────────────────────────
     "explorer": {
       "_role": "QUICK — fast answers, brainstorming, conversational Q&A",
-      "_note": "GLM-4.7-Flash is FREE (Z.ai). 203K context.",
+      "_note": "GLM-4.7-Flash is FREE (Z.ai). 203K context. Primary entry point.",
       "model": "http://localhost:4000/v1||glm-4.7-flash||sk-litellm-master",
       "temperature": 0.5,
       "maxTokens": 4096,
@@ -292,8 +295,11 @@
     },
 
     // ── UI / MULTIMODAL REVIEWER ──────────────────────────────────────────────
+    // Gemini 3 Pro Preview: multimodal vision for screenshots/mockups.
+    // Differentiated from oracle: this agent requires image input; oracle is code-only.
     "visionary": {
-      "_role": "UI/UX REVIEWER — multimodal design review, layout critique, a11y audit",
+      "_role": "UI/UX REVIEWER — multimodal design review (requires screenshot/mockup input)",
+      "_note": "Use when you have image input. For code-only review, use oracle.",
       "model": "cursor-acp/gemini-3-pro-preview",
       "temperature": 0.2,
       "maxTokens": 8192,
@@ -307,8 +313,6 @@
     },
 
     // ── DATA / INFRA ──────────────────────────────────────────────────────────
-    // DB schema, SQLAlchemy/Alembic, query optimization.
-    // Relevant to Playspace (Neon.tech/PostgreSQL) and JobOS (RDS + Celery).
     "architect": {
       "_role": "DATA/INFRA — database schema, SQLAlchemy/Alembic, query optimization, backend",
       "model": "http://localhost:4000/v1||grok-4.1-fast||sk-litellm-master",
@@ -336,8 +340,6 @@
       "fallback": "http://localhost:4000/v1||glm-4.7-flash||sk-litellm-master",
     },
 
-    // Grok 4.1 Fast is the new default headless workhorse.
-    // $0.20/$0.50, backed by $2,500 YC credits ≈ 5 billion output tokens.
     "coding": {
       "_note": "grok-4.1-fast $0.20/$0.50, 2M ctx — primary headless coder",
       "model": "http://localhost:4000/v1||grok-4.1-fast||sk-litellm-master",
@@ -409,7 +411,6 @@
       "system_prompt_append": "\n\n<role>Atomic commits, conventional-commit messages. Safe operations only. Confirm before force-push or rebase on shared branches.</role>",
     },
 
-    // Grok 4 ($3/$15) via YC $2,500 credits before burning o3 OpenAI budget.
     "premium": {
       "_note": "Grok 4 $3/$15 via YC Grok credits → o3 $2/$8 via YC OpenAI credits",
       "model": "http://localhost:4000/v1||grok-4||sk-litellm-master",
@@ -431,10 +432,10 @@
     },
     "presets": {
       "default": {
-        "_note": "Near-zero cost — free/quota/cheap models",
+        "_note": "Near-zero cost — free/quota/cheap models only",
         "alpha": {
           "model": "http://localhost:4000/v1||grok-4.1-fast||sk-litellm-master",
-          "_note": "$0.20/$0.50, 2M context",
+          "_note": "$0.20/$0.50, 2M context — primary workhorse",
         },
         "beta": {
           "model": "http://localhost:4000/v1||gemini-3-flash||sk-litellm-master",
@@ -511,6 +512,8 @@
       "xai": 8, // $2,500 YC Grok credits; grok-4.1-fast is main workhorse
     },
     "modelConcurrency": {
+      // ← normalized all keys to "provider/model" format
+      "anthropic/claude-sonnet-4-5": 2,
       "anthropic/claude-sonnet-4-6": 2,
       "openai/o3": 1,
       "openai/gpt-5.4": 1,

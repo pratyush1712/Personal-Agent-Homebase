@@ -171,15 +171,16 @@ doctor-prod: require-prod-env
 
 test: doctor
 
-config-check: config-check-local config-check-prod scripts-check
+config-check: config-check-local config-check-prod
 
-config-check-local: require-local-env
+config-check-local: require-local-env scripts-check
 	@$(COMPOSE_LOCAL) config --no-interpolate > /dev/null
 	@echo "Local compose config: OK"
 
-config-check-prod: require-prod-env
+config-check-prod: require-prod-env scripts-check
 	@$(COMPOSE_PROD) config --no-interpolate > /dev/null
 	@echo "Production compose config: OK"
+	
 
 scripts-check:
 	@bash -n scripts/health-check.sh
