@@ -66,7 +66,7 @@ services:
       context: ./mem0
       dockerfile: Dockerfile
     # image: openagent-mem0:local
-    image: mem0/mem0-api-server:latest
+    # image: mem0/mem0-api-server:latest
     restart: unless-stopped
     volumes:
       - mem0_data:/app/data

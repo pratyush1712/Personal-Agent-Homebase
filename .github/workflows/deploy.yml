@@ -69,6 +69,7 @@ jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: validate
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     environment: production
@@ -84,15 +85,18 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
-            set -e
+            set -euo pipefail
             cd ~/openagent-stack || exit 1
 
             echo "Pulling latest changes..."
+            target_ref="${{ github.ref_name }}"
+            target_sha="${{ github.sha }}"
             git fetch origin
-            current_branch="$(git rev-parse --abbrev-ref HEAD)"
-            git pull --ff-only origin "$current_branch"
+            git checkout -B "$target_ref" "origin/$target_ref"
+            git reset --hard "$target_sha"
 
             echo "Validating production config..."
+            make preflight-prod
             make config-check-prod
             make scripts-check
 

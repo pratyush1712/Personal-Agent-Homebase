@@ -15,12 +15,14 @@ COMPOSE_PROD := $(COMPOSE_BASE) --env-file "$(PROD_ENV_FILE)" -f docker-compose.
 WITH_LOCAL_ENV := ./scripts/with-env.sh "$(LOCAL_ENV_FILE)"
 WITH_PROD_ENV := ./scripts/with-env.sh "$(PROD_ENV_FILE)"
 
-.PHONY: help install install-local install-prod require-local-env require-prod-env dev prod deploy status status-prod logs logs-prod stop stop-prod restart restart-prod backup backup-prod restore restore-prod clean clean-prod doctor doctor-prod test config-check config-check-local config-check-prod scripts-check agent-config-local agent-config-remote update update-prod
+.PHONY: help install install-local install-prod require-local-env require-prod-env preflight-prod bootstrap-lightsail dev prod deploy status status-prod logs logs-prod stop stop-prod restart restart-prod backup backup-prod restore restore-prod clean clean-prod doctor doctor-prod test config-check config-check-local config-check-prod scripts-check agent-config-local agent-config-remote update update-prod
 
 help:
 	@echo "OpenAgent Stack — Hybrid Commands"
 	@echo "  make install-local        Create .env.local from .env.local.example"
 	@echo "  make install-prod         Create .env.prod from .env.prod.example"
+	@echo "  make bootstrap-lightsail  Install Docker + firewall on Lightsail"
+	@echo "  make preflight-prod       Validate host before production deploy"
 	@echo "  make dev                  Start the local development stack"
 	@echo "  make prod                 Start/update the production VPS stack"
 	@echo "  make doctor               Check local containers and endpoints"
@@ -67,15 +69,21 @@ require-prod-env:
 		exit 1; \
 	fi
 
+preflight-prod: require-prod-env
+	@ENV_FILE="$(PROD_ENV_FILE)" ./scripts/preflight-prod.sh
+
+bootstrap-lightsail:
+	@./scripts/bootstrap-lightsail.sh --help
+
 dev: require-local-env config-check-local
 	@echo "Starting local OpenAgent stack..."
 	@$(COMPOSE_LOCAL) up -d --remove-orphans
 	@$(MAKE) doctor
 
-prod: require-prod-env config-check-prod
+prod: require-prod-env preflight-prod config-check-prod
 	@echo "Starting production OpenAgent stack..."
 	@$(COMPOSE_PROD) pull
-	@$(COMPOSE_PROD) up -d --remove-orphans
+	@$(COMPOSE_PROD) up -d --remove-orphans --force-recreate
 	@$(MAKE) doctor-prod
 	@$(WITH_PROD_ENV) bash -lc 'echo "LiteLLM UI:  $${PROXY_LOGOUT_URL:-$${LITELLM_BASE_URL%/}/ui}"; echo "Mem0 API:    $${MEM0_BASE_URL:-https://mem0.$${DOMAIN:-$(DOMAIN)}}"; echo "Status:      https://status.$${DOMAIN:-$(DOMAIN)}/health"'
 
@@ -175,6 +183,8 @@ config-check-prod: require-prod-env
 
 scripts-check:
 	@bash -n scripts/health-check.sh
+	@bash -n scripts/preflight-prod.sh
+	@bash -n scripts/bootstrap-lightsail.sh
 	@bash -n scripts/render-openagent-config.sh
 	@bash -n scripts/with-env.sh
 	@echo "Shell scripts: OK"
