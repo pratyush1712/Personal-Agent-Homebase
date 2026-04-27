@@ -1,0 +1,41 @@
+// ==========================================================
+// Warm Minimalism palette — inspired by LittleBird + MaraudersMap
+// ==========================================================
+
+// Light-mode surfaces
+$body-bg: #fffaeb;
+$body-bg-secondary: #fff9e9;
+$card-bg: #ffffff;
+
+// Text
+$body-color: #1b1c15;
+$secondary-text: #6b6b6b;
+
+// Brand / accent — used sparingly
+$primary: #2d6a4f;
+$link-color: #1967d2;
+$danger: #c0392b;
+$warning: #d4a017;
+$maintenance: #5b6abf;
+
+// Bootstrap overrides
+$border-radius: 0.5rem;
+
+// Interaction states
+$highlight: #40916c;
+$highlight-white: #e8f5e9;
+
+// Dark-mode — warm charcoals, not cold blue-grays
+$dark-font-color: #e8e0d4;
+$dark-font-color2: #1b1c15;
+$dark-bg: #262220;
+$dark-bg2: #302c28;
+$dark-border-color: #443e38;
+$dark-header-bg: #262220;
+
+// Easings
+$easing-in: cubic-bezier(0.54, 0.78, 0.55, 0.97);
+$easing-out: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+$easing-in-out: cubic-bezier(0.79, 0.14, 0.15, 0.86);
+
+$dropdown-border-radius: 0.5rem;

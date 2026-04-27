@@ -63,7 +63,9 @@ services:
 
   # ── Uptime Kuma ─────────────────────────────────────────────────────────────
   uptime-kuma:
-    image: louislam/uptime-kuma:1
+    build:
+      context: ./uptime-kuma
+      dockerfile: Dockerfile
     restart: unless-stopped
     volumes:
       - uptime_kuma_data:/app/data
@@ -175,6 +177,10 @@ services:
         reservations:
           cpus: "0.1"
           memory: 200M
+
+networks:
+  openagent-net:
+    driver: bridge
 
 volumes:
   caddy_data:

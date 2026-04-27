@@ -1,0 +1,35 @@
+@theme {
+    /* Colors */
+    --color-primary-burgundy: #660000;
+    --color-dark-brown: #24201e;
+    --color-pure-black: #000000;
+    --color-medium-brown: #2d2926;
+    --color-warm-cream: #fcf6e8;
+    --color-light-cream: #fcf9ef;
+    --color-pure-white: #ffffff;
+    --color-blue-accent: #1967d2;
+    --color-red-alert: #ff4d55;
+    --color-medium-gray: #5f6368;
+
+    /* Spacing */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 10px;
+    --spacing-lg: 16px;
+    --spacing-xl: 24px;
+    --spacing-2xl: 30px;
+    --spacing-3xl: 32px;
+
+    /* Border Radius */
+    --radius-sm: 3px;
+    --radius-md: 4px;
+    --radius-lg: 8px;
+    --radius-xl: 14px;
+    --radius-2xl: 20px;
+
+    /* Fonts */
+    --font-im-fell-double-pica: "IM Fell Double Pica", sans-serif;
+    --font-im-fell-double-pica-sc: "IM Fell Double Pica SC", sans-serif;
+    --font-open-sans: "Open Sans", sans-serif;
+    --font-source-sans-pro: "Source Sans Pro", sans-serif;
+}

@@ -1,0 +1,185 @@
+{
+    "color": {
+        "Primary Burgundy": {
+            "$type": "color",
+            "$value": "#660000",
+            "$description": "Featured badges, primary branding elements, accent colors"
+        },
+        "Dark Brown": {
+            "$type": "color",
+            "$value": "#24201e",
+            "$description": "Primary text color, headings, body content"
+        },
+        "Pure Black": {
+            "$type": "color",
+            "$value": "#000000",
+            "$description": "High contrast text, icons, borders"
+        },
+        "Medium Brown": {
+            "$type": "color",
+            "$value": "#2d2926",
+            "$description": "Secondary text, subtle content"
+        },
+        "Warm Cream": {
+            "$type": "color",
+            "$value": "#fcf6e8",
+            "$description": "Card backgrounds, content areas"
+        },
+        "Light Cream": {
+            "$type": "color",
+            "$value": "#fcf9ef",
+            "$description": "Secondary background areas"
+        },
+        "Pure White": {
+            "$type": "color",
+            "$value": "#ffffff",
+            "$description": "Modal backgrounds, overlays, primary backgrounds"
+        },
+        "Blue Accent": {
+            "$type": "color",
+            "$value": "#1967d2",
+            "$description": "Interactive elements, buttons, links"
+        },
+        "Red Alert": {
+            "$type": "color",
+            "$value": "#ff4d55",
+            "$description": "Error states, urgent notifications"
+        },
+        "Medium Gray": {
+            "$type": "color",
+            "$value": "#5f6368",
+            "$description": "Secondary text, muted content"
+        }
+    },
+    "typography": {
+        "Heading Large": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "IM Fell Double Pica",
+                "fontSize": "24px",
+                "fontWeight": 400,
+                "lineHeight": "31.92px",
+                "letterSpacing": "normal"
+            },
+            "$description": "Primary headings, page titles"
+        },
+        "Heading Medium": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "IM Fell Double Pica",
+                "fontSize": "18px",
+                "fontWeight": 700,
+                "lineHeight": "30.6px",
+                "letterSpacing": "normal"
+            },
+            "$description": "Section headings, card titles"
+        },
+        "Body Large": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "IM Fell Double Pica",
+                "fontSize": "16px",
+                "fontWeight": 400,
+                "lineHeight": "27.2px",
+                "letterSpacing": "normal"
+            },
+            "$description": "Primary body text, descriptions"
+        },
+        "Body Medium": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "IM Fell Double Pica",
+                "fontSize": "14.95px",
+                "fontWeight": 400,
+                "lineHeight": "25.415px",
+                "letterSpacing": "normal"
+            },
+            "$description": "Secondary body text, captions"
+        },
+        "Body Small": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "IM Fell Double Pica",
+                "fontSize": "14px",
+                "fontWeight": 400,
+                "lineHeight": "18px",
+                "letterSpacing": "normal"
+            },
+            "$description": "Small text, metadata, labels"
+        },
+        "UI Text": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "Open Sans",
+                "fontSize": "16px",
+                "fontWeight": 400,
+                "lineHeight": "normal",
+                "letterSpacing": "normal"
+            },
+            "$description": "Interface elements, buttons, navigation"
+        },
+        "Small Caps": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "IM Fell Double Pica SC",
+                "fontSize": "14.95px",
+                "fontWeight": 400,
+                "lineHeight": "22.425px",
+                "letterSpacing": "normal"
+            },
+            "$description": "Special emphasis, categories, labels"
+        }
+    },
+    "spacing": {
+        "xs": {
+            "$type": "dimension",
+            "$value": "4px"
+        },
+        "sm": {
+            "$type": "dimension",
+            "$value": "8px"
+        },
+        "md": {
+            "$type": "dimension",
+            "$value": "10px"
+        },
+        "lg": {
+            "$type": "dimension",
+            "$value": "16px"
+        },
+        "xl": {
+            "$type": "dimension",
+            "$value": "24px"
+        },
+        "2xl": {
+            "$type": "dimension",
+            "$value": "30px"
+        },
+        "3xl": {
+            "$type": "dimension",
+            "$value": "32px"
+        }
+    },
+    "borderRadius": {
+        "sm": {
+            "$type": "dimension",
+            "$value": "3px"
+        },
+        "md": {
+            "$type": "dimension",
+            "$value": "4px"
+        },
+        "lg": {
+            "$type": "dimension",
+            "$value": "8px"
+        },
+        "xl": {
+            "$type": "dimension",
+            "$value": "14px"
+        },
+        "2xl": {
+            "$type": "dimension",
+            "$value": "20px"
+        }
+    }
+}

@@ -1,0 +1,202 @@
+{
+    "color": {
+        "Primary Text": {
+            "$type": "color",
+            "$value": "#1b1c15",
+            "$description": "Main headings and body text"
+        },
+        "Pure Black": {
+            "$type": "color",
+            "$value": "#000000",
+            "$description": "High contrast text and icons"
+        },
+        "Background": {
+            "$type": "color",
+            "$value": "#fffaeb",
+            "$description": "Main page background"
+        },
+        "White": {
+            "$type": "color",
+            "$value": "#ffffff",
+            "$description": "Card backgrounds and button text"
+        },
+        "Secondary Background": {
+            "$type": "color",
+            "$value": "#fff9e9",
+            "$description": "Subtle background variations"
+        },
+        "Dark Gray": {
+            "$type": "color",
+            "$value": "#222222",
+            "$description": "Secondary text and UI elements"
+        },
+        "Medium Gray": {
+            "$type": "color",
+            "$value": "#6b6b6b",
+            "$description": "Muted text and descriptions"
+        },
+        "Blue Accent": {
+            "$type": "color",
+            "$value": "#3898ec",
+            "$description": "Links and interactive elements"
+        }
+    },
+    "typography": {
+        "Hero Heading": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "Meraki",
+                "fontSize": "50px",
+                "fontWeight": 400,
+                "lineHeight": "49px",
+                "letterSpacing": "-3px"
+            },
+            "$description": "Large display headings"
+        },
+        "Section Heading": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "Meraki",
+                "fontSize": "40px",
+                "fontWeight": 400,
+                "lineHeight": "36px",
+                "letterSpacing": "normal"
+            },
+            "$description": "Section headings"
+        },
+        "Subheading": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "Meraki",
+                "fontSize": "30px",
+                "fontWeight": 400,
+                "lineHeight": "30px",
+                "letterSpacing": "-1px"
+            },
+            "$description": "Subheadings"
+        },
+        "Card Title": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "Meraki",
+                "fontSize": "24px",
+                "fontWeight": 400,
+                "lineHeight": "24px",
+                "letterSpacing": "normal"
+            },
+            "$description": "Card and component titles"
+        },
+        "Button Text": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "Meraki",
+                "fontSize": "20px",
+                "fontWeight": 500,
+                "lineHeight": "24px",
+                "letterSpacing": "-0.4px"
+            },
+            "$description": "Button labels"
+        },
+        "Body Text": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "Sohne Buch",
+                "fontSize": "14px",
+                "fontWeight": 400,
+                "lineHeight": "20px",
+                "letterSpacing": "normal"
+            },
+            "$description": "Primary body text"
+        },
+        "Body Large": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "Sohne Buch",
+                "fontSize": "20px",
+                "fontWeight": 400,
+                "lineHeight": "24px",
+                "letterSpacing": "normal"
+            },
+            "$description": "Large body text and descriptions"
+        },
+        "Body Bold": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": "Sohne Buch",
+                "fontSize": "16px",
+                "fontWeight": 700,
+                "lineHeight": "24px",
+                "letterSpacing": "normal"
+            },
+            "$description": "Emphasized body text"
+        }
+    },
+    "spacing": {
+        "xs": {
+            "$type": "dimension",
+            "$value": "4px"
+        },
+        "sm": {
+            "$type": "dimension",
+            "$value": "8px"
+        },
+        "md": {
+            "$type": "dimension",
+            "$value": "12px"
+        },
+        "lg": {
+            "$type": "dimension",
+            "$value": "16px"
+        },
+        "xl": {
+            "$type": "dimension",
+            "$value": "24px"
+        },
+        "2xl": {
+            "$type": "dimension",
+            "$value": "32px"
+        },
+        "3xl": {
+            "$type": "dimension",
+            "$value": "40px"
+        },
+        "4xl": {
+            "$type": "dimension",
+            "$value": "60px"
+        },
+        "5xl": {
+            "$type": "dimension",
+            "$value": "64px"
+        },
+        "6xl": {
+            "$type": "dimension",
+            "$value": "80px"
+        }
+    },
+    "borderRadius": {
+        "sm": {
+            "$type": "dimension",
+            "$value": "2px"
+        },
+        "md": {
+            "$type": "dimension",
+            "$value": "6px"
+        },
+        "lg": {
+            "$type": "dimension",
+            "$value": "12px"
+        },
+        "xl": {
+            "$type": "dimension",
+            "$value": "14px"
+        },
+        "2xl": {
+            "$type": "dimension",
+            "$value": "20px"
+        },
+        "full": {
+            "$type": "dimension",
+            "$value": "50px"
+        }
+    }
+}
